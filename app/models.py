@@ -1,7 +1,6 @@
 from app import db, login_manager
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy.dialects.mysql import LONGTEXT
 import json
 from app.utils import get_beijing_time
 from flask import current_app
@@ -120,13 +119,13 @@ class Dataset(db.Model):
     publish_date = db.Column(db.String(50), nullable=True)
     source = db.Column(db.String(100), nullable=True)
     download_url = db.Column(db.String(255), nullable=True)
-    dataset_info = db.Column(LONGTEXT, nullable=True)
+    dataset_info = db.Column(db.Text, nullable=True)
     
     # 新增字段
     dataset_type = db.Column(db.String(50), nullable=False, default='系统', server_default='系统')
     visibility = db.Column(db.String(50), nullable=False, default='公开', server_default='公开')
     format = db.Column(db.String(50), nullable=False, default='QA', server_default='QA')
-    jinja2_template = db.Column(LONGTEXT, nullable=True)  # 修改为存储模板内容
+    jinja2_template = db.Column(db.Text, nullable=True)  # 修改为存储模板内容
     is_active = db.Column(db.Boolean, nullable=False, default=True, server_default='1')
     
     # 多对多关系到 DatasetCategory

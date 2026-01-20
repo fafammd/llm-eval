@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() if csrf_token else '' }}">
-    <title>{% block title %}{{ title if title else '大模型评估平台' }}{% endblock %}</title>
+    <title>{% block title %}{{ title if title else '备案大模型体验平台' }}{% endblock %}</title>
     <!-- 立即应用主题，避免FOUC -->
     <script>
         (function() {
@@ -56,7 +56,7 @@
         <div class="container mx-auto">
             <div class="flex-1">
                 <a href="{{ url_for('main.index') }}" class="btn btn-ghost text-xl whitespace-nowrap">
-                    <i class="fas fa-brain mr-1"></i> 大模型评估平台
+                    <i class="fas fa-brain mr-1"></i> 备案大模型体验平台
                 </a>
             </div>
             <div class="flex-none">
@@ -73,34 +73,34 @@
                                 </ul>
                             </details>
                         </li>
-                        <li><a href="{{ url_for('datasets.datasets_list') }}">测试集</a></li>
-                        <li>
-                            <details id="chat-dropdown-details">
-                                <summary class="whitespace-nowrap">效果评估</summary>
-                                <ul class="p-2 bg-base-100 rounded-t-none shadow-lg z-[1001] w-max">
-                                    <li><a href="{{ url_for('evaluations.create_evaluation') }}">开始评估</a></li>
-                                    <li><a href="{{ url_for('evaluations.evaluations_list') }}">评估历史</a></li>
-                                </ul>
-                            </details>
-                        </li>
-                        <li>
-                            <details id="perf-eval-dropdown-details">
-                                <summary class="whitespace-nowrap">性能评估</summary>
-                                <ul class="p-2 bg-base-100 rounded-t-none shadow-lg z-[1001] w-max">
-                                    <li><a href="{{ url_for('perf_eval.create') }}">开始评估</a></li>
-                                    <li><a href="{{ url_for('perf_eval.history') }}">评估历史</a></li>
-                                </ul>
-                            </details>
-                        </li>
-                        <li>
-                            <details id="rag-eval-dropdown-details">
-                                <summary class="whitespace-nowrap">RAG评估</summary>
-                                <ul class="p-2 bg-base-100 rounded-t-none shadow-lg z-[1001] w-max">
-                                    <li><a href="{{ url_for('rag_eval.create') }}">开始评估</a></li>
-                                    <li><a href="{{ url_for('rag_eval.history') }}">评估历史</a></li>
-                                </ul>
-                            </details>
-                        </li>
+{#                        <li><a href="{{ url_for('datasets.datasets_list') }}">测试集</a></li>#}
+{#                        <li>#}
+{#                            <details id="chat-dropdown-details">#}
+{#                                <summary class="whitespace-nowrap">效果评估</summary>#}
+{#                                <ul class="p-2 bg-base-100 rounded-t-none shadow-lg z-[1001] w-max">#}
+{#                                    <li><a href="{{ url_for('evaluations.create_evaluation') }}">开始评估</a></li>#}
+{#                                    <li><a href="{{ url_for('evaluations.evaluations_list') }}">评估历史</a></li>#}
+{#                                </ul>#}
+{#                            </details>#}
+{#                        </li>#}
+{#                        <li>#}
+{#                            <details id="perf-eval-dropdown-details">#}
+{#                                <summary class="whitespace-nowrap">性能评估</summary>#}
+{#                                <ul class="p-2 bg-base-100 rounded-t-none shadow-lg z-[1001] w-max">#}
+{#                                    <li><a href="{{ url_for('perf_eval.create') }}">开始评估</a></li>#}
+{#                                    <li><a href="{{ url_for('perf_eval.history') }}">评估历史</a></li>#}
+{#                                </ul>#}
+{#                            </details>#}
+{#                        </li>#}
+{#                        <li>#}
+{#                            <details id="rag-eval-dropdown-details">#}
+{#                                <summary class="whitespace-nowrap">RAG评估</summary>#}
+{#                                <ul class="p-2 bg-base-100 rounded-t-none shadow-lg z-[1001] w-max">#}
+{#                                    <li><a href="{{ url_for('rag_eval.create') }}">开始评估</a></li>#}
+{#                                    <li><a href="{{ url_for('rag_eval.history') }}">评估历史</a></li>#}
+{#                                </ul>#}
+{#                            </details>#}
+{#                        </li>#}
                         <li>
                             <details id="theme-dropdown-details">
                                 <summary class="whitespace-nowrap">

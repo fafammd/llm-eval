@@ -42,6 +42,8 @@
                     <td>
                         {% if model.model_type == 'openai_compatible' %}
                             <span class="badge badge-info badge-sm">OpenAI兼容</span>
+                        {% elif model.model_type == 'custom' %}
+                            <span class="badge badge-warning badge-sm">自定义协议</span>
                         {% else %}
                             <span class="badge badge-sm">{{ model.model_type }}</span>
                         {% endif %}

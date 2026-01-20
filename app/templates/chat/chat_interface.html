@@ -247,6 +247,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const MAX_MODELS = 3;
     let modelPanelCount = 0; 
     const sessionId = messagesContainer.dataset.sessionId;
+    // 基于后端路由生成的会话基础路径，确保兼容 URL_PREFIX
+    const chatSessionBaseUrl = "{{ url_for('chat.view_chat_session', session_id=0) }}".replace(/0$/, '');
     const isModelPreselected = messagesContainer.dataset.isModelPreselected === 'true'; 
     const hasSavedConfigs = messagesContainer.dataset.hasSavedConfigs === 'true';
     let assistantRawMarkdownHolder = ''; 
@@ -376,7 +378,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (configs.length > 0) {
             try {
                 // 保存到服务器
-                const response = await fetch(`/chat/session/${sessionId}/save_configs`, {
+                const response = await fetch(`${chatSessionBaseUrl}${sessionId}/save_configs`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ model_configs: configs })
@@ -538,7 +540,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 从服务器动态加载保存的配置
     async function loadSavedConfigsFromServer() {
         try {
-            const response = await fetch(`/chat/session/${sessionId}/get_configs`, {
+            const response = await fetch(`${chatSessionBaseUrl}${sessionId}/get_configs`, {
                 method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -775,7 +777,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (response.ok) {
                 const data = await response.json();
                 // 跳转到新的会话页面
-                window.location.href = `/chat/session/${data.session_id}`;
+                window.location.href = `${chatSessionBaseUrl}${data.session_id}`;
             } else {
                 const errorData = await response.json();
                 window.showDaisyUIAlert('错误', errorData.error || '创建新对话失败');
@@ -968,7 +970,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
         
         try {
-            const response = await fetch(`/chat/session/${sessionId}/send`, {
+            const response = await fetch(`${chatSessionBaseUrl}${sessionId}/send`, {
                 method: 'POST', headers: headers, body: JSON.stringify(requestBody)
             });
 

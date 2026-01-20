@@ -9,82 +9,111 @@ import sys
 import os
 import time
 import pymysql
+import psycopg2
+import psycopg2.errors
 
 def create_database_if_not_exists():
-    """创建数据库（如果不存在）"""
+    """创建数据库（如果不存在），支持 MySQL / PostgreSQL"""
+    engine = os.environ.get('DB_ENGINE', 'mysql').lower()
     try:
-        # 从环境变量获取数据库连接信息
         db_host = os.environ.get('DB_HOST', 'localhost')
-        db_port = int(os.environ.get('DB_PORT', 3306))
-        db_user = os.environ.get('DB_USER', 'root')
-        db_password = os.environ.get('DB_PASSWORD', '')
-        db_name = os.environ.get('DB_NAME', 'llm_eva')
-        
-        # 先连接到MySQL服务器（不指定数据库）
-        connection = pymysql.connect(
-            host=db_host,
-            port=db_port,
-            user=db_user,
-            password=db_password,
-            charset='utf8mb4',
-            connect_timeout=10
-        )
-        
-        try:
-            with connection.cursor() as cursor:
-                # 检查数据库是否存在
-                cursor.execute(f"SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '{db_name}'")
-                result = cursor.fetchone()
-                
-                if not result:
-                    print(f"🔧 数据库 '{db_name}' 不存在，正在创建...")
-                    cursor.execute(f"CREATE DATABASE `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-                    connection.commit()
-                    print(f"✅ 数据库 '{db_name}' 创建成功")
-                else:
-                    print(f"📊 数据库 '{db_name}' 已存在")
-                    
-        finally:
-            connection.close()
-            
-    except Exception as e:
-        print(f"⚠️ 创建数据库时出错: {e}")
-        print("🔧 请确保MySQL服务正在运行，并且用户有创建数据库的权限")
-        return False
-    
-    return True
+        db_port = int(os.environ.get('DB_PORT', 3306 if engine == 'mysql' else 5432))
+        db_user = os.environ.get('DB_USER', os.environ.get('MYSQL_USER', os.environ.get('POSTGRES_USER', 'root')))
+        db_password = os.environ.get('DB_PASSWORD', os.environ.get('MYSQL_PASSWORD', os.environ.get('POSTGRES_PASSWORD', '')))
+        db_name = os.environ.get('DB_NAME', os.environ.get('MYSQL_DATABASE', os.environ.get('POSTGRES_DB', 'llm_eva')))
 
-def wait_for_database():
-    """等待数据库连接可用"""
-    print("等待数据库连接...")
-    
-    db_host = os.environ.get('DB_HOST', 'localhost')
-    db_port = int(os.environ.get('DB_PORT', 3306))
-    db_user = os.environ.get('DB_USER', 'root')
-    db_password = os.environ.get('DB_PASSWORD', '')
-    
-    max_retries = 30
-    retry_count = 0
-    
-    # 首先等待MySQL服务器可用（不指定数据库）
-    while retry_count < max_retries:
-        try:
+        if engine == 'postgresql':
+            conn = psycopg2.connect(
+                host=db_host,
+                port=db_port,
+                user=db_user,
+                password=db_password,
+                dbname='postgres',
+                connect_timeout=10,
+            )
+            conn.autocommit = True
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
+                    if not cur.fetchone():
+                        print(f"🔧 数据库 '{db_name}' 不存在，正在创建...")
+                        cur.execute(f'CREATE DATABASE "{db_name}"')
+                        print(f"✅ 数据库 '{db_name}' 创建成功")
+                    else:
+                        print(f"📊 数据库 '{db_name}' 已存在")
+            finally:
+                conn.close()
+        else:
             connection = pymysql.connect(
                 host=db_host,
                 port=db_port,
                 user=db_user,
                 password=db_password,
-                connect_timeout=5
+                charset='utf8mb4',
+                connect_timeout=10
             )
-            connection.close()
-            print("MySQL服务器连接成功！")
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = %s", (db_name,))
+                    result = cursor.fetchone()
+                    if not result:
+                        print(f"🔧 数据库 '{db_name}' 不存在，正在创建...")
+                        cursor.execute(f"CREATE DATABASE `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+                        connection.commit()
+                        print(f"✅ 数据库 '{db_name}' 创建成功")
+                    else:
+                        print(f"📊 数据库 '{db_name}' 已存在")
+            finally:
+                connection.close()
+    except Exception as e:
+        print(f"⚠️ 创建数据库时出错: {e}")
+        print("🔧 请确保数据库服务正在运行，并且用户有创建数据库的权限")
+        return False
+    return True
+
+def wait_for_database():
+    """等待数据库连接可用"""
+    print("等待数据库连接...")
+    engine = os.environ.get('DB_ENGINE', 'mysql').lower()
+
+    db_host = os.environ.get('DB_HOST', 'localhost')
+    db_port = int(os.environ.get('DB_PORT', 3306 if engine == 'mysql' else 5432))
+    db_user = os.environ.get('DB_USER', os.environ.get('MYSQL_USER', os.environ.get('POSTGRES_USER', 'root')))
+    db_password = os.environ.get('DB_PASSWORD', os.environ.get('MYSQL_PASSWORD', os.environ.get('POSTGRES_PASSWORD', '')))
+
+    max_retries = 30
+    retry_count = 0
+
+    while retry_count < max_retries:
+        try:
+            if engine == 'postgresql':
+                conn = psycopg2.connect(
+                    host=db_host,
+                    port=db_port,
+                    user=db_user,
+                    password=db_password,
+                    dbname='postgres',
+                    connect_timeout=5,
+                )
+                conn.close()
+                print("PostgreSQL 服务器连接成功！")
+            else:
+                connection = pymysql.connect(
+                    host=db_host,
+                    port=db_port,
+                    user=db_user,
+                    password=db_password,
+                    connect_timeout=5
+                )
+                connection.close()
+                print("MySQL 服务器连接成功！")
             return True
         except Exception as e:
             retry_count += 1
-            print(f"MySQL服务器未就绪，等待5秒... ({retry_count}/{max_retries})")
+            print(f"数据库服务器未就绪，等待5秒... ({retry_count}/{max_retries})")
             time.sleep(5)
-    
-    print("MySQL服务器连接超时！")
+
+    print("数据库服务器连接超时！")
     return False
 
 def init_database():

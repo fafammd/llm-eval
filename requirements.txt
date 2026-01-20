@@ -7,6 +7,7 @@ WTForms
 requests
 python-dotenv
 PyMySQL
+psycopg2-binary
 openai
 modelscope==1.25.0
 evalscope==0.16.3
@@ -16,7 +17,7 @@ pandas
 numpy
 openpyxl
 gunicorn
-# 其他必要依赖
+
 Werkzeug
 Jinja2
 MarkupSafe

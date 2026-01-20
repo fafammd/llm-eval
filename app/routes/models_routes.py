@@ -30,7 +30,7 @@ def create_model():
             "system_prompt": form.system_prompt.data,
             "default_temperature": form.default_temperature.data,
             "notes": form.notes.data,
-            "model_type": "openai_compatible" # Or get from form if added
+            "model_type": form.model_type.data  # Get from form
         }
         new_model = model_service.create_user_model(model_data, current_user)
         if new_model:
@@ -67,7 +67,7 @@ def edit_model(model_id):
             "system_prompt": form.system_prompt.data,
             "default_temperature": form.default_temperature.data,
             "notes": form.notes.data,
-            "model_type": model.model_type, # Keep original type or allow change via form
+            "model_type": form.model_type.data,  # Allow change via form
             "api_key": form.api_key.data # 始终包含API Key，因为现在会回填显示
         }
         if model_service.update_user_model(model, model_data):

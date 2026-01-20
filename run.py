@@ -1,54 +1,91 @@
-from flask import Flask
-from app import create_app, db
-from app.models import User, AIModel, ChatSession, ChatMessage
+from pathlib import Path
+from dotenv import load_dotenv
 import logging  # 添加logging模块导入
 import argparse  # 添加命令行参数解析
 import os
+import pymysql
+import psycopg2
+
+# 先加载环境变量，再导入 create_app（否则 config 会用到尚未加载的 env）
+PROJECT_ROOT = Path(__file__).resolve().parent
+load_dotenv(PROJECT_ROOT / '.flaskenv')
+load_dotenv(PROJECT_ROOT / '.env')
+
+from app import create_app, db
+from app.models import User, AIModel, ChatSession, ChatMessage
+
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / '.flaskenv')
 
 def create_database_if_not_exists():
-    """创建数据库（如果不存在）"""
-    try:
-        import pymysql
-        from urllib.parse import urlparse
-        
-        # 从配置中获取数据库连接信息
-        db_host = os.environ.get('DB_HOST', 'localhost')
-        db_port = int(os.environ.get('DB_PORT', '3306'))
+    """创建数据库（如果不存在），支持 MySQL / PostgreSQL"""
+    engine = os.environ.get('DB_ENGINE', 'mysql').lower()
+    db_host = os.environ.get('DB_HOST', 'localhost')
+    db_name = os.environ.get('DB_NAME', os.environ.get('MYSQL_DATABASE', os.environ.get('POSTGRES_DB', 'llm_eva')))
+
+    if engine == 'postgresql':
+        db_port = int(os.environ.get('DB_PORT', 5432))
+        db_user = os.environ.get('DB_USER', os.environ.get('POSTGRES_USER', 'postgres'))
+        db_password = os.environ.get('DB_PASSWORD', os.environ.get('POSTGRES_PASSWORD', ''))
+        try:
+            conn = psycopg2.connect(
+                host=db_host,
+                port=db_port,
+                user=db_user,
+                password=db_password,
+                dbname='postgres',
+                connect_timeout=10,
+            )
+            conn.autocommit = True
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
+                    if not cur.fetchone():
+                        print(f"🔧 数据库 '{db_name}' 不存在，正在创建...")
+                        cur.execute(f'DROP DATABASE IF EXISTS "{db_name}"')  # 确保干净创建
+                        cur.execute(f'CREATE DATABASE "{db_name}"')
+                        print(f"✅ 数据库 '{db_name}' 创建成功")
+                    else:
+                        print(f"📊 数据库 '{db_name}' 已存在")
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"⚠️ 创建数据库时出错: {e}")
+            print("🔧 请确保 PostgreSQL 服务运行且用户有创建数据库权限")
+            return False
+    else:
+        db_port = int(os.environ.get('DB_PORT', 3306))
         db_user = os.environ.get('DB_USER', os.environ.get('MYSQL_USER', 'root'))
         db_password = os.environ.get('DB_PASSWORD', os.environ.get('MYSQL_PASSWORD', ''))
-        db_name = os.environ.get('DB_NAME', os.environ.get('MYSQL_DATABASE', 'llm_eva'))
-        
-        # 先连接到MySQL服务器（不指定数据库）
-        connection = pymysql.connect(
-            host=db_host,
-            port=db_port,
-            user=db_user,
-            password=db_password,
-            charset='utf8mb4'
-        )
-        
         try:
-            with connection.cursor() as cursor:
-                # 检查数据库是否存在
-                cursor.execute(f"SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '{db_name}'")
-                result = cursor.fetchone()
-                
-                if not result:
-                    print(f"🔧 数据库 '{db_name}' 不存在，正在创建...")
-                    cursor.execute(f"CREATE DATABASE `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-                    connection.commit()
-                    print(f"✅ 数据库 '{db_name}' 创建成功")
-                else:
-                    print(f"📊 数据库 '{db_name}' 已存在")
-                    
-        finally:
-            connection.close()
-            
-    except Exception as e:
-        print(f"⚠️ 创建数据库时出错: {e}")
-        print("🔧 请确保MySQL服务正在运行，并且用户有创建数据库的权限")
-        return False
-    
+            connection = pymysql.connect(
+                host=db_host,
+                port=db_port,
+                user=db_user,
+                password=db_password,
+                charset='utf8mb4',
+                connect_timeout=10,
+            )
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = %s", (db_name,))
+                    result = cursor.fetchone()
+
+                    if not result:
+                        print(f"🔧 数据库 '{db_name}' 不存在，正在创建...")
+                        cursor.execute(f"CREATE DATABASE `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+                        connection.commit()
+                        print(f"✅ 数据库 '{db_name}' 创建成功")
+                    else:
+                        print(f"📊 数据库 '{db_name}' 已存在")
+            finally:
+                connection.close()
+        except Exception as e:
+            print(f"⚠️ 创建数据库时出错: {e}")
+            print("🔧 请确保 MySQL 服务运行且用户有创建数据库权限")
+            return False
+
     return True
 
 def check_and_init_database(app):
@@ -57,7 +94,7 @@ def check_and_init_database(app):
         # 首先确保数据库存在
         if not create_database_if_not_exists():
             return False
-            
+
         with app.app_context():
             # 检查数据库是否存在表
             from sqlalchemy import text, inspect
@@ -66,7 +103,7 @@ def check_and_init_database(app):
             from flask_migrate import stamp as migrate_stamp
             from sqlalchemy import text, inspect
 
-            print("应用数据库迁移...")
+            print(f"应用数据库迁移... (engine={os.environ.get('DB_ENGINE')}, uri={app.config.get('SQLALCHEMY_DATABASE_URI')})")
             # 检查数据库中是否有表以及是否包含rag_evaluation表
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()

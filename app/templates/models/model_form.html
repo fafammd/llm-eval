@@ -20,6 +20,23 @@
 
             {{ forms.render_field(form.display_name, placeholder='例如：我的 GPT-4o 模型', required=True) }}
             
+            <div class="form-control">
+                {{ form.model_type.label(class="label") }}
+                {{ form.model_type(class="select select-bordered w-full") }}
+                <label class="label">
+                    <span class="label-text-alt">{{ form.model_type.description }}</span>
+                </label>
+                {% if form.model_type.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">
+                            {% for error in form.model_type.errors %}
+                                {{ error }}<br>
+                            {% endfor %}
+                        </span>
+                    </label>
+                {% endif %}
+            </div>
+            
             {{ forms.render_field(form.model_identifier, placeholder='例如：gpt-4o 或 claude-3-opus-20240229', required=True) }}
             
             {{ forms.render_field(form.api_base_url, placeholder='例如：https://api.openai.com/v1', required=True) }}

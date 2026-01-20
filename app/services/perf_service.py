@@ -14,7 +14,8 @@ from typing import Tuple, Dict, List, Any, Optional
 from evalscope.perf.utils.db_util import PercentileMetrics
 from evalscope.perf.utils.benchmark_util import Metrics
 import logging
-
+import platform
+import threading
 # evalscope导入
 from evalscope.perf.main import run_perf_benchmark
 
@@ -125,65 +126,90 @@ class PerformanceEvaluationService:
     def run_performance_eval_task_process(task_id: int, task_cfg: Dict[str, Any], output_file_path: str):
         """
         在独立进程中执行性能评估任务，并将结果元组直接保存到输出文件
-        
-        Args:
-            task_id: 评估任务ID (仅用于日志)
-            task_cfg: 评估任务配置
-            output_file_path: 存储结果的临时文件路径
         """
-        # 获取一个标准的logger实例，用于在此独立进程中记录日志
         process_logger = logging.getLogger(f"perf_eval_process.{task_id}")
-
-        def timeout_handler(signum, frame):
-            raise TimeoutError("性能评估任务执行超时")
-        
-        try:
-            process_logger.info(f"开始执行性能评估任务 {task_id}, 配置: {task_cfg}")
-            
-            # 设置总任务超时时间（15分钟）
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(15 * 60)  # 15分钟超时
-            
-            start_time = time.time()
-            
-            # 直接调用run_perf_benchmark获取返回值
-            result_tuple = run_perf_benchmark(task_cfg)
-            
-            # 取消超时信号
-            signal.alarm(0)
-            
-            elapsed_time = time.time() - start_time
-            process_logger.info(f"性能评估任务 {task_id} 执行耗时: {elapsed_time:.2f}秒")
-            
-            # 将结果序列化到文件
+    
+        # Windows 平台不支持 signal.alarm，使用线程方式
+        if platform.system() == 'Windows':
+            result_queue = []
+            exception_queue = []
+    
+            def target():
+                try:
+                    start_time = time.time()
+                    result_tuple = run_perf_benchmark(task_cfg)
+                    result_queue.append(result_tuple)
+    
+                    elapsed_time = time.time() - start_time
+                    process_logger.info(f"性能评估任务 {task_id} 执行耗时: {elapsed_time:.2f}秒")
+                except Exception as e:
+                    exception_queue.append(e)
+    
+            thread = threading.Thread(target=target)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=15 * 60)  # 15分钟超时
+    
+            if thread.is_alive():
+                # 超时情况处理
+                error_msg = f"性能评估任务 {task_id} 执行超时（15分钟），可能是模型服务不可用"
+                process_logger.error(error_msg)
+                with open(output_file_path, 'wb') as f:
+                    pickle.dump(("ERROR", error_msg), f)
+                return
+    
+            if exception_queue:
+                raise exception_queue[0]
+    
+            # 保存结果
             with open(output_file_path, 'wb') as f:
-                pickle.dump(result_tuple, f)
-                
+                pickle.dump(result_queue[0], f)
             process_logger.info(f"性能评估任务 {task_id} 已完成，结果已保存到 {output_file_path}")
-            
-        except TimeoutError:
-            signal.alarm(0)
-            error_msg = f"性能评估任务 {task_id} 执行超时（15分钟），可能是模型服务不可用"
-            process_logger.error(error_msg)
-            with open(output_file_path, 'wb') as f:
-                pickle.dump(("ERROR", error_msg), f)
-                
-        except Exception as e:
-            signal.alarm(0)
-            error_str = str(e).lower()
-            
-            # 检查是否是模型服务相关的错误
-            if any(keyword in error_str for keyword in ['502', 'bad gateway', 'connection', 'timeout', 'network', 'refused']):
-                error_msg = f"模型服务不可用: {str(e)}"
-            else:
-                error_msg = f"性能评估任务 {task_id} 执行失败: {str(e)}"
-                
-            process_logger.error(error_msg)
-            process_logger.error(traceback.format_exc())
-            
-            # 将错误信息写入输出文件
-            with open(output_file_path, 'wb') as f:
-                pickle.dump(("ERROR", error_msg), f)
+    
+        else:
+            # Unix 系统保留原逻辑
+            def timeout_handler(signum, frame):
+                raise TimeoutError("性能评估任务执行超时")
+    
+            try:
+                process_logger.info(f"开始执行性能评估任务 {task_id}, 配置: {task_cfg}")
+    
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(15 * 60)
+    
+                start_time = time.time()
+                result_tuple = run_perf_benchmark(task_cfg)
+                signal.alarm(0)
+    
+                elapsed_time = time.time() - start_time
+                process_logger.info(f"性能评估任务 {task_id} 执行耗时: {elapsed_time:.2f}秒")
+    
+                with open(output_file_path, 'wb') as f:
+                    pickle.dump(result_tuple, f)
+    
+                process_logger.info(f"性能评估任务 {task_id} 已完成，结果已保存到 {output_file_path}")
+    
+            except TimeoutError:
+                signal.alarm(0)
+                error_msg = f"性能评估任务 {task_id} 执行超时（15分钟），可能是模型服务不可用"
+                process_logger.error(error_msg)
+                with open(output_file_path, 'wb') as f:
+                    pickle.dump(("ERROR", error_msg), f)
+    
+            except Exception as e:
+                signal.alarm(0)
+                error_str = str(e).lower()
+    
+                if any(keyword in error_str for keyword in ['502', 'bad gateway', 'connection', 'timeout', 'network', 'refused']):
+                    error_msg = f"模型服务不可用: {str(e)}"
+                else:
+                    error_msg = f"性能评估任务 {task_id} 执行失败: {str(e)}"
+    
+                process_logger.error(error_msg)
+                process_logger.error(traceback.format_exc())
+    
+                with open(output_file_path, 'wb') as f:
+                    pickle.dump(("ERROR", error_msg), f)
 
     @staticmethod
     def update_task_from_output_file(app, task_id: int, output_file_path: str):

@@ -6,6 +6,7 @@ import openai # Import the OpenAI library
 import traceback # For detailed error logging
 from openai import APIConnectionError, RateLimitError, AuthenticationError, APIStatusError
 import json # 用于序列化模型配置
+import requests # For custom API calls
 from app.utils import get_beijing_time
 
 def create_chat_session(user_id, session_name=None):
@@ -148,6 +149,252 @@ def get_session_model_configs(session_id):
     except Exception as e:
         return None
 
+def _call_custom_api(model_id: int, messages: list, system_prompt=None, temperature=None, stream: bool = False):
+    """调用自定义协议API（非OpenAI兼容）"""
+    model = AIModel.query.get(model_id)
+    if not model:
+        def model_not_found_error_gen(): 
+            yield {"error": "模型未找到", "details": f"ID 为 {model_id} 的模型不存在。", "is_final_chunk": True, "settings_snapshot": {}}
+        if stream: return model_not_found_error_gen()
+        else: return {"error": "模型未找到", "details": f"ID 为 {model_id} 的模型不存在。"}
+
+    app_logger = current_app.logger
+    api_key = model_service.get_decrypted_api_key(model)
+    base_url = model.api_base_url.rstrip('/')
+    
+    model_info = {
+        "id": model.id,
+        "display_name": model.display_name,
+        "model_identifier": model.model_identifier,
+        "system_prompt": model.system_prompt or "You are a helpful assistant."
+    }
+    
+    actual_system_prompt = system_prompt if system_prompt is not None else model_info["system_prompt"]
+    actual_temperature = temperature if temperature is not None else (model.default_temperature if model.default_temperature is not None else 0.7)
+    
+    settings_snapshot = {
+        "model_identifier": model_info["model_identifier"],
+        "model_id": model_info["id"],
+        "system_prompt": actual_system_prompt,
+        "temperature": actual_temperature,
+        "timestamp": get_beijing_time().isoformat()
+    }
+
+    # 构建请求头
+    headers = {
+        'Content-Type': 'application/json',
+    }
+    if api_key:
+        headers['Authorization'] = f'Bearer {api_key}'
+    
+    # 构建请求体
+    # 检查API URL是否使用dialogue格式（如备案大模型：/api/chat）
+    use_dialogue_format = '/api/chat' in base_url or (base_url.endswith('/chat') and '/v1/chat/completions' not in base_url)
+    
+    request_body = {
+        "model": model.model_identifier or "default",
+        "stream": stream
+    }
+    
+    # 处理消息格式
+    # dialogue格式：只支持user和assistant角色，需要过滤system消息
+    if use_dialogue_format:
+        # 过滤掉system消息，只保留user和assistant
+        dialogue_messages = [msg for msg in messages if msg.get('role') in ['user', 'assistant']]
+        
+        # 如果有system_prompt，尝试将其合并到第一条user消息中
+        if actual_system_prompt and dialogue_messages and dialogue_messages[0].get('role') == 'user':
+            # 将system prompt添加到第一条user消息前面
+            original_content = dialogue_messages[0].get('content', '')
+            dialogue_messages[0]['content'] = f"{actual_system_prompt}\n\n{original_content}"
+        
+        request_body["dialogue"] = dialogue_messages
+        # 添加max_tokens（备案大模型需要此参数）
+        request_body["max_tokens"] = 1024  # 默认值，可以根据需要调整
+        # 注意：备案大模型格式不包含temperature参数
+    else:
+        # 使用标准messages格式（OpenAI兼容）
+        request_messages = messages.copy()
+        if actual_system_prompt and messages:
+            system_message = {"role": "system", "content": actual_system_prompt}
+            request_messages = [system_message] + messages
+        elif actual_system_prompt:
+            request_messages = [{"role": "system", "content": actual_system_prompt}]
+        
+        request_body["messages"] = request_messages
+        request_body["temperature"] = actual_temperature
+
+    if stream:
+        def custom_stream_generator():
+            try:
+                app_logger.debug(f"向自定义API {base_url} 发送流式请求")
+                response = requests.post(
+                    base_url,
+                    json=request_body,
+                    headers=headers,
+                    stream=True,
+                    timeout=(10, 300)  # 10秒连接超时，300秒读取超时
+                )
+                response.raise_for_status()
+                
+                full_response_content = []
+                has_yielded_any_content = False
+                
+                # 处理流式响应（假设是SSE格式或逐行JSON）
+                for line in response.iter_lines(decode_unicode=True):
+                    if not line:
+                        continue
+                    
+                    # 尝试解析SSE格式：data: {...}
+                    if line.startswith('data: '):
+                        line = line[6:]
+                    
+                    # 尝试解析JSON
+                    try:
+                        data = json.loads(line)
+                        
+                        # 尝试多种响应格式
+                        content = None
+                        if isinstance(data, dict):
+                            # 备案大模型格式：dialogue响应可能在result/content字段
+                            if 'result' in data:
+                                result = data['result']
+                                if isinstance(result, str):
+                                    content = result
+                                elif isinstance(result, dict):
+                                    content = result.get('content') or result.get('text') or result.get('message', '')
+                            # OpenAI兼容格式
+                            elif 'choices' in data and data['choices']:
+                                choice = data['choices'][0]
+                                if isinstance(choice, dict):
+                                    delta = choice.get('delta', {})
+                                    if isinstance(delta, dict):
+                                        content = delta.get('content', '')
+                                    elif isinstance(delta, str):
+                                        content = delta
+                                    else:
+                                        # 如果delta不是字典也不是字符串，尝试直接从choice获取
+                                        content = choice.get('content') or choice.get('text', '')
+                                elif isinstance(choice, str):
+                                    content = choice
+                            # 简单格式
+                            elif 'content' in data:
+                                content = data['content'] if isinstance(data['content'], str) else str(data['content'])
+                            elif 'text' in data:
+                                content = data['text'] if isinstance(data['text'], str) else str(data['text'])
+                            elif 'message' in data:
+                                msg = data['message']
+                                if isinstance(msg, dict):
+                                    content = msg.get('content', '')
+                                elif isinstance(msg, str):
+                                    content = msg
+                            # 备案大模型可能的响应格式：直接包含text字段
+                            elif 'text' in data:
+                                content = data['text'] if isinstance(data['text'], str) else ''
+                        elif isinstance(data, str):
+                            content = data
+                        elif isinstance(data, list):
+                            # 如果是数组，尝试获取第一个元素
+                            if data and isinstance(data[0], dict):
+                                first_item = data[0]
+                                content = first_item.get('content') or first_item.get('text') or first_item.get('message', '')
+                            elif data and isinstance(data[0], str):
+                                content = data[0]
+                        
+                        if content and isinstance(content, str):
+                            full_response_content.append(content)
+                            has_yielded_any_content = True
+                            yield {"content_piece": content, "settings_snapshot": settings_snapshot, "is_final_chunk": False}
+                    except json.JSONDecodeError:
+                        # 如果不是JSON，可能是纯文本流
+                        if line.strip():
+                            full_response_content.append(line)
+                            has_yielded_any_content = True
+                            yield {"content_piece": line, "settings_snapshot": settings_snapshot, "is_final_chunk": False}
+                    except (AttributeError, TypeError) as e:
+                        # 处理类型错误，记录日志但继续处理
+                        app_logger.warning(f"解析响应数据时出错 (跳过此行): {e}, 原始数据: {line[:100]}")
+                        continue
+                
+                # 发送最终响应
+                final_content = "".join(full_response_content)
+                yield {
+                    "full_content": final_content, 
+                    "settings_snapshot": settings_snapshot, 
+                    "is_final_chunk": True, 
+                    "empty_stream": not has_yielded_any_content
+                }
+            except requests.exceptions.RequestException as e:
+                app_logger.error(f"自定义API调用失败 (模型: {model_info['display_name']}): {traceback.format_exc()}")
+                error_msg = "API 调用失败"
+                details = str(e)
+                if isinstance(e, requests.exceptions.HTTPError):
+                    try:
+                        error_data = e.response.json()
+                        details = error_data.get('error', {}).get('message', details)
+                    except:
+                        details = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+                yield {"error": error_msg, "details": details, "settings_snapshot": settings_snapshot, "is_final_chunk": True}
+            except Exception as e:
+                app_logger.error(f"自定义API调用中发生未知错误 (模型: {model_info['display_name']}): {traceback.format_exc()}")
+                yield {"error": "未知错误", "details": str(e), "settings_snapshot": settings_snapshot, "is_final_chunk": True}
+        
+        return custom_stream_generator()
+    else:
+        # 非流式响应
+        try:
+            app_logger.debug(f"向自定义API {base_url} 发送非流式请求")
+            response = requests.post(
+                base_url,
+                json=request_body,
+                headers=headers,
+                timeout=(10, 60)
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # 尝试多种响应格式
+            content = None
+            if isinstance(data, dict):
+                # OpenAI兼容格式
+                if 'choices' in data and data['choices']:
+                    content = data['choices'][0].get('message', {}).get('content', '')
+                # 简单格式
+                elif 'content' in data:
+                    content = data['content']
+                elif 'text' in data:
+                    content = data['text']
+                elif 'message' in data:
+                    msg = data['message']
+                    if isinstance(msg, dict):
+                        content = msg.get('content', '')
+                    elif isinstance(msg, str):
+                        content = msg
+                elif 'result' in data:
+                    content = data['result']
+            elif isinstance(data, str):
+                content = data
+            
+            if not content:
+                content = json.dumps(data)  # 如果无法解析，返回原始JSON
+            
+            return {"content": content, "settings_snapshot": settings_snapshot, "has_reasoning": False}
+        except requests.exceptions.RequestException as e:
+            app_logger.error(f"自定义API调用失败 (模型: {model_info['display_name']}): {traceback.format_exc()}")
+            error_msg = "API 调用失败"
+            details = str(e)
+            if isinstance(e, requests.exceptions.HTTPError):
+                try:
+                    error_data = e.response.json()
+                    details = error_data.get('error', {}).get('message', details)
+                except:
+                    details = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+            return {"error": error_msg, "details": details, "settings_snapshot": settings_snapshot}
+        except Exception as e:
+            app_logger.error(f"自定义API调用中发生未知错误 (模型: {model_info['display_name']}): {traceback.format_exc()}")
+            return {"error": "未知错误", "details": str(e), "settings_snapshot": settings_snapshot}
+
 def call_openai_compatible_api(model_id: int, messages: list, system_prompt=None, temperature=None, stream: bool = False):
     # 由于此函数在路由处理程序的app_context中被调用，所以我们可以安全地访问数据库
     # 确保在路由中调用此函数时使用了with app.app_context()
@@ -162,6 +409,10 @@ def call_openai_compatible_api(model_id: int, messages: list, system_prompt=None
     # 在函数早期（应用上下文有效时）捕获 logger 和 config 值
     app_logger = current_app.logger
 
+    # 检查模型类型，如果是自定义类型，使用自定义API调用
+    if model.model_type == 'custom':
+        return _call_custom_api(model_id, messages, system_prompt, temperature, stream)
+    
     # 在应用上下文中获取所有需要的数据
     api_key = model_service.get_decrypted_api_key(model)
     base_url = model.api_base_url

@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
+from sqlalchemy import text
 from .config import config
 import datetime
 import logging  # 添加logging模块导入
@@ -35,7 +36,14 @@ def create_app(config_name=None):
         config_name: 配置名称 ('development', 'production', 'default')
                     如果为None，则从环境变量FLASK_ENV获取
     """
-    app = Flask(__name__)
+    # 先根据环境变量预计算统一前缀，用于静态资源路径
+    raw_prefix = os.environ.get('URL_PREFIX', '').strip()
+    if raw_prefix and not raw_prefix.startswith('/'):
+        raw_prefix = '/' + raw_prefix
+    raw_prefix = raw_prefix.rstrip('/')
+    static_url_path = (raw_prefix + '/static') if raw_prefix else '/static'
+
+    app = Flask(__name__, static_url_path=static_url_path)
     
     # 确定配置类
     if config_name is None:
@@ -130,6 +138,23 @@ def create_app(config_name=None):
     migrate.init_app(app, db)
     login_manager.init_app(app)
     csrf.init_app(app)
+
+    # PostgreSQL schema 支持：若设置 DB_SCHEMA，则创建并设置 search_path
+    def _ensure_pg_schema():
+        schema = (app.config.get('DB_SCHEMA') or '').strip()
+        uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if not schema or not uri.startswith('postgresql'):
+            return
+        safe_schema = schema.replace('"', '')
+        # 在应用上下文内可直接使用 db.engine
+        with db.engine.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
+            conn.execute(text(f'SET search_path TO "{safe_schema}", public'))
+        app.logger.info(f"✅ PostgreSQL schema 已设置为 {safe_schema} (search_path)")
+
+    # 需要在应用上下文内执行以获取 engine
+    with app.app_context():
+        _ensure_pg_schema()
     
     # 添加自定义Jinja2过滤器
     @app.template_filter('from_json')
@@ -194,33 +219,55 @@ def create_app(config_name=None):
             response.headers['Expires'] = '0'
         return response
 
+    # 统一路由前缀，可通过配置项 URL_PREFIX 设置（例如 "/api"）
+    def _normalize_prefix(prefix):
+        if not prefix:
+            return ''
+        prefix = prefix.strip()
+        if not prefix:
+            return ''
+        if not prefix.startswith('/'):
+            prefix = '/' + prefix
+        return prefix.rstrip('/')
+
+    def _merge_prefix(base_prefix, bp_prefix):
+        base = _normalize_prefix(base_prefix)
+        bp = _normalize_prefix(bp_prefix)
+        if not base and not bp:
+            return None
+        if base and bp:
+            return base + bp
+        return base or bp
+
+    base_prefix = app.config.get('URL_PREFIX', '')
+
     # 注册蓝图
     from app.routes.auth_routes import bp as auth_bp
-    app.register_blueprint(auth_bp, url_prefix='/auth')
+    app.register_blueprint(auth_bp, url_prefix=_merge_prefix(base_prefix, auth_bp.url_prefix or '/auth'))
 
     from app.routes.dashboard_routes import bp as main_bp
-    app.register_blueprint(main_bp)
+    app.register_blueprint(main_bp, url_prefix=_merge_prefix(base_prefix, main_bp.url_prefix or ''))
 
     from app.routes.models_routes import bp as models_bp
-    app.register_blueprint(models_bp)
+    app.register_blueprint(models_bp, url_prefix=_merge_prefix(base_prefix, models_bp.url_prefix or ''))
 
     from app.routes.chat_routes import bp as chat_bp
-    app.register_blueprint(chat_bp)
+    app.register_blueprint(chat_bp, url_prefix=_merge_prefix(base_prefix, chat_bp.url_prefix or ''))
 
     # 注册新的数据集蓝图
     from app.routes.dataset_routes import bp as datasets_bp
-    app.register_blueprint(datasets_bp)
+    app.register_blueprint(datasets_bp, url_prefix=_merge_prefix(base_prefix, datasets_bp.url_prefix or ''))
 
     from app.routes.evaluation_routes import bp as evaluations_bp
-    app.register_blueprint(evaluations_bp)
+    app.register_blueprint(evaluations_bp, url_prefix=_merge_prefix(base_prefix, evaluations_bp.url_prefix or ''))
 
     # 注册性能评估蓝图
     from app.routes.perf_eval_routes import perf_eval_bp
-    app.register_blueprint(perf_eval_bp)
+    app.register_blueprint(perf_eval_bp, url_prefix=_merge_prefix(base_prefix, perf_eval_bp.url_prefix or ''))
 
     # 注册RAG评估蓝图
     from app.routes.rag_eval_routes import bp as rag_eval_bp
-    app.register_blueprint(rag_eval_bp)
+    app.register_blueprint(rag_eval_bp, url_prefix=_merge_prefix(base_prefix, rag_eval_bp.url_prefix or ''))
 
     # 错误处理器，需要正确缩进到create_app函数内部
     @app.errorhandler(400)

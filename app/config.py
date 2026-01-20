@@ -5,14 +5,24 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def get_database_uri():
-    """动态构建数据库连接URL"""
+    """动态构建数据库连接URL，支持 MySQL 与 PostgreSQL"""
+    engine = os.environ.get('DB_ENGINE', '').lower() or 'mysql'
+
     db_host = os.environ.get('DB_HOST', 'localhost')
-    db_port = os.environ.get('DB_PORT', '3306')
-    db_user = os.environ.get('DB_USER', os.environ.get('MYSQL_USER', 'root'))
-    db_password = os.environ.get('DB_PASSWORD', os.environ.get('MYSQL_PASSWORD', ''))
     db_name = os.environ.get('DB_NAME', os.environ.get('MYSQL_DATABASE', 'llm_eva'))
+
+    if engine.startswith('postgres'):
+        driver = 'postgresql+psycopg2'
+        db_port = os.environ.get('DB_PORT', '5432')
+        db_user = os.environ.get('DB_USER', os.environ.get('POSTGRES_USER', 'postgres'))
+        db_password = os.environ.get('DB_PASSWORD', os.environ.get('POSTGRES_PASSWORD', ''))
+    else:
+        driver = 'mysql+pymysql'
+        db_port = os.environ.get('DB_PORT', '3306')
+        db_user = os.environ.get('DB_USER', os.environ.get('MYSQL_USER', 'root'))
+        db_password = os.environ.get('DB_PASSWORD', os.environ.get('MYSQL_PASSWORD', ''))
     
-    return f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    return f"{driver}://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
 def get_uploads_dir():
     """动态获取上传目录路径，支持Docker容器环境"""
@@ -46,6 +56,10 @@ def get_outputs_dir():
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'a-default-fallback-secret-key'
+    # 统一路由前缀（如 /api、/tower_talk），默认为空
+    URL_PREFIX = os.environ.get('URL_PREFIX', '')
+    # PostgreSQL schema，留空则使用 public
+    DB_SCHEMA = os.environ.get('DB_SCHEMA', '').strip()
     
     # 启用CSRF保护，保障应用安全
     WTF_CSRF_ENABLED = True

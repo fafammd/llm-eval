@@ -19,9 +19,17 @@ class ChangePasswordForm(FlaskForm):
 
 class AIModelForm(FlaskForm):
     display_name = StringField('模型显示名称', validators=[DataRequired(), Length(max=100)])
-    api_base_url = StringField('API Base URL', validators=[DataRequired(), URL(), Length(max=255)])
-    model_identifier = StringField('模型标识 (API调用名)', validators=[DataRequired(), Length(max=100)])
-    api_key = StringField('API Key', validators=[DataRequired(), Length(max=500)])
+    model_type = SelectField('模型类型', 
+                            choices=[('openai_compatible', 'OpenAI 兼容协议'), ('custom', '自定义协议')], 
+                            validators=[DataRequired()],
+                            default='openai_compatible',
+                            description='选择模型的API协议类型：OpenAI兼容协议使用标准OpenAI格式，自定义协议支持非标准API接口')
+    api_base_url = StringField('API Base URL', validators=[DataRequired(), URL(), Length(max=255)], 
+                               description='对于OpenAI兼容协议：填写基础URL（如 https://api.openai.com/v1）\n对于自定义协议：填写完整的API端点地址（如 http://36.111.6.17:8908/api/chat）')
+    model_identifier = StringField('模型标识 (API调用名)', validators=[DataRequired(), Length(max=100)],
+                                   description='对于OpenAI兼容协议：模型ID（如 gpt-4）\n对于自定义协议：可为任意标识或留空')
+    api_key = StringField('API Key', validators=[Optional(), Length(max=500)], 
+                         description='API密钥，某些自定义协议可能不需要，可为空')
     provider_name = StringField('提供商名称 (可选)', validators=[Optional(), Length(max=100)])
     system_prompt = TextAreaField('默认系统提示 (可选)', validators=[Optional()])
     default_temperature = FloatField('默认Temperature (0-1, 可选)', validators=[Optional(), NumberRange(min=0.0, max=1.0)])
