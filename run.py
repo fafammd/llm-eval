@@ -22,7 +22,7 @@ def create_database_if_not_exists():
     """创建数据库（如果不存在），支持 MySQL / PostgreSQL"""
     engine = os.environ.get('DB_ENGINE', 'mysql').lower()
     db_host = os.environ.get('DB_HOST', 'localhost')
-    db_name = os.environ.get('DB_NAME', os.environ.get('MYSQL_DATABASE', os.environ.get('POSTGRES_DB', 'llm_eva')))
+    db_name = os.environ.get('DB_NAME', 'llm_eva')
 
     if engine == 'postgresql':
         db_port = int(os.environ.get('DB_PORT', 5432))

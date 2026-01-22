@@ -20,7 +20,7 @@ def create_database_if_not_exists():
         db_port = int(os.environ.get('DB_PORT', 3306 if engine == 'mysql' else 5432))
         db_user = os.environ.get('DB_USER', os.environ.get('MYSQL_USER', os.environ.get('POSTGRES_USER', 'root')))
         db_password = os.environ.get('DB_PASSWORD', os.environ.get('MYSQL_PASSWORD', os.environ.get('POSTGRES_PASSWORD', '')))
-        db_name = os.environ.get('DB_NAME', os.environ.get('MYSQL_DATABASE', os.environ.get('POSTGRES_DB', 'llm_eva')))
+        db_name = os.environ.get('DB_NAME', 'llm_eva')
 
         if engine == 'postgresql':
             conn = psycopg2.connect(

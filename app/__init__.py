@@ -134,6 +134,83 @@ def create_app(config_name=None):
         stream_handler.setFormatter(formatter)
         app.logger.addHandler(stream_handler)
 
+    # 兼容openGauss：修复版本字符串解析问题（必须在db.init_app之前应用）
+    # openGauss的版本字符串格式与PostgreSQL不同，需要特殊处理
+    # 原因：SQLAlchemy的PostgreSQL方言无法解析openGauss的版本字符串格式
+    # 解决：在首次连接前修补_get_server_version_info方法，自动检测并处理openGauss版本
+    if os.environ.get('DB_ENGINE', '').lower() == 'postgresql':
+        try:
+            from sqlalchemy.dialects.postgresql import base as pg_base
+            
+            # 修复openGauss版本解析问题（在首次连接前应用补丁）
+            try:
+                # 尝试获取dialect类（兼容不同SQLAlchemy版本）
+                dialect_class = None
+                dialect_class_name = None
+                
+                # 按优先级尝试不同的类名
+                for class_name in ['PG_Dialect', 'PostgreSQLDialect', 'PGDialect']:
+                    if hasattr(pg_base, class_name):
+                        dialect_class = getattr(pg_base, class_name)
+                        dialect_class_name = class_name
+                        break
+                
+                if dialect_class and hasattr(dialect_class, '_get_server_version_info'):
+                    original_get_server_version = dialect_class._get_server_version_info
+                    
+                    def patched_get_server_version_info(self, connection):
+                        """兼容openGauss的版本字符串解析
+        
+                        处理逻辑：
+                        1. 先尝试使用原始方法解析（适用于标准PostgreSQL）
+                        2. 如果失败（AssertionError），检查是否为openGauss
+                        3. 如果是openGauss，从版本字符串中提取版本号
+                        4. 如果无法提取，返回兼容版本号(9, 6)
+                        """
+                        try:
+                            return original_get_server_version(self, connection)
+                        except (AssertionError, ValueError) as e:
+                            # 原始方法失败，可能是openGauss，尝试特殊处理
+                            try:
+                                # 使用原始连接执行SQL获取版本信息
+                                raw_conn = connection.connection
+                                cursor = raw_conn.cursor()
+                                cursor.execute("SELECT version()")
+                                version_str = cursor.fetchone()[0]
+                                cursor.close()
+                                
+                                # 检查是否为openGauss
+                                if version_str and ('openGauss' in version_str or 'opengauss' in version_str.lower()):
+                                    app.logger.debug(f"检测到openGauss数据库，版本字符串: {version_str[:100]}")
+                                    # 提取版本号：openGauss 6.0.1 -> (6, 0)
+                                    import re
+                                    match = re.search(r'openGauss\s+(\d+)\.(\d+)', version_str, re.IGNORECASE)
+                                    if match:
+                                        major, minor = match.groups()
+                                        version_tuple = (int(major), int(minor))
+                                        app.logger.info(f"✅ openGauss版本解析成功: {version_tuple}")
+                                        return version_tuple
+                                    # 如果无法解析，返回一个兼容的版本号
+                                    app.logger.warning("无法从openGauss版本字符串中提取版本号，使用兼容版本(9, 6)")
+                                    return (9, 6)
+                                else:
+                                    # 不是openGauss，重新抛出原始异常
+                                    raise e
+                            except Exception as parse_error:
+                                app.logger.warning(f"解析数据库版本时出错: {parse_error}")
+                                # 如果无法处理，返回兼容版本，避免应用启动失败
+                                return (9, 6)
+                    
+                    # 应用补丁
+                    dialect_class._get_server_version_info = patched_get_server_version_info
+                    app.logger.info(f"✅ openGauss兼容性补丁已应用（dialect类: {dialect_class_name}）")
+                else:
+                    app.logger.warning("未找到PostgreSQL dialect类或_get_server_version_info方法，openGauss补丁未应用")
+            except Exception as e:
+                app.logger.warning(f"应用openGauss兼容性补丁时出错（将尝试继续）: {e}")
+        except Exception as e:
+            app.logger.warning(f"设置openGauss兼容性时出错: {e}")
+    
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
@@ -147,13 +224,34 @@ def create_app(config_name=None):
             return
         safe_schema = schema.replace('"', '')
         # 在应用上下文内可直接使用 db.engine
-        with db.engine.begin() as conn:
-            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
-            conn.execute(text(f'SET search_path TO "{safe_schema}", public'))
-        app.logger.info(f"✅ PostgreSQL schema 已设置为 {safe_schema} (search_path)")
+        try:
+            with db.engine.begin() as conn:
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
+                conn.execute(text(f'SET search_path TO "{safe_schema}", public'))
+            app.logger.info(f"✅ PostgreSQL schema 已设置为 {safe_schema} (search_path)")
+        except Exception as e:
+            app.logger.warning(f"设置PostgreSQL schema时出错: {e}")
 
     # 需要在应用上下文内执行以获取 engine
     with app.app_context():
+        # 设置连接事件监听器（用于设置search_path）
+        if os.environ.get('DB_ENGINE', '').lower() == 'postgresql':
+            try:
+                from sqlalchemy import event
+                
+                @event.listens_for(db.engine, "connect", insert=True)
+                def set_search_path(dbapi_conn, connection_record):
+                    """在连接时设置search_path（如果配置了schema）"""
+                    db_schema = app.config.get('DB_SCHEMA')
+                    if db_schema and db_schema.strip():
+                        try:
+                            with dbapi_conn.cursor() as cursor:
+                                cursor.execute(f'SET search_path TO "{db_schema.strip()}", public')
+                        except Exception as e:
+                            app.logger.warning(f"设置search_path时出错: {e}")
+            except Exception as e:
+                app.logger.warning(f"设置连接事件监听器时出错: {e}")
+        
         _ensure_pg_schema()
     
     # 添加自定义Jinja2过滤器
