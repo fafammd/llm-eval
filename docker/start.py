@@ -18,15 +18,16 @@ def main():
     """主启动函数"""
     print("=== Docker容器启动 ===")
 
+    workers=os.environ.get('WORKERS', '2')
     # 初始化数据库
-    run_command("python /app/init_database.py", "初始化数据库")
+    run_command("python /usr/local/nldata/init_database.py", "初始化数据库")
     
     # 启动Flask应用
     print("启动Flask应用...")
     os.execvp("gunicorn", [
         "gunicorn",
         "--bind", "0.0.0.0:5000",
-        "--workers", "4", 
+        "--workers", str(workers), 
         "--timeout", "120",
         "run:app"
     ])

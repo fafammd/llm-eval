@@ -97,6 +97,10 @@ cp .env.example .env
 docker-compose up -d
 ```
 
+## Docker镜像构建
+
+docker build -f docker/Dockerfile -t your-image .
+
 ## 📚 使用指南
 
 ### 添加模型
