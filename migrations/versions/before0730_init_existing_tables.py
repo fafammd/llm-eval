@@ -8,6 +8,11 @@ Create Date: 2025-07-30 10:34:17.760189
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
+# 为了兼容 PostgreSQL，使用条件导入
+try:
+    from sqlalchemy.dialects import postgresql
+except ImportError:
+    postgresql = None
 
 
 # revision identifiers, used by Alembic.
@@ -32,11 +37,13 @@ def upgrade():
     sa.Column('publish_date', sa.String(length=50), nullable=True),
     sa.Column('source', sa.String(length=100), nullable=True),
     sa.Column('download_url', sa.String(length=255), nullable=True),
-    sa.Column('dataset_info', mysql.LONGTEXT(), nullable=True),
+    # 使用 sa.Text() 替代 mysql.LONGTEXT() 以兼容 PostgreSQL
+    # PostgreSQL 不支持 LONGTEXT，使用 Text 类型可以在两种数据库中工作
+    sa.Column('dataset_info', sa.Text(), nullable=True),
     sa.Column('dataset_type', sa.String(length=50), server_default='系统', nullable=False),
     sa.Column('visibility', sa.String(length=50), server_default='公开', nullable=False),
     sa.Column('format', sa.String(length=50), server_default='QA', nullable=False),
-    sa.Column('jinja2_template', mysql.LONGTEXT(), nullable=True),
+    sa.Column('jinja2_template', sa.Text(), nullable=True),
     sa.Column('is_active', sa.Boolean(), server_default='1', nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('name')

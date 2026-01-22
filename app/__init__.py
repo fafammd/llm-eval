@@ -9,7 +9,12 @@ import datetime
 import logging  # 添加logging模块导入
 import os  # 添加os模块导入
 # 导入数据集插件，确保@register_dataset装饰器能够正确注册
-from app.adapter.custom_dataset_plugin import CustomDatasetPlugin
+# 注意：在精简版模式下（无evalscope），此导入会失败，但不影响核心功能
+try:
+    from app.adapter.custom_dataset_plugin import CustomDatasetPlugin
+except ImportError:
+    # 精简版模式：evalscope未安装，跳过插件注册
+    pass
 from logging.handlers import RotatingFileHandler
 
 # 修复Flask-Login的redirect导入问题
@@ -66,6 +71,14 @@ def create_app(config_name=None):
     
     # 配置日志级别，确保INFO级别的日志能够显示
     app.logger.setLevel(logging.INFO)
+    
+    # 确保控制台也能看到日志（添加StreamHandler）
+    if not any(isinstance(h, logging.StreamHandler) for h in app.logger.handlers):
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(console_formatter)
+        app.logger.addHandler(console_handler)
     
     # 配置文件日志处理器
     # 确保日志目录存在 - 根据环境自动选择路径
@@ -352,20 +365,33 @@ def create_app(config_name=None):
     from app.routes.chat_routes import bp as chat_bp
     app.register_blueprint(chat_bp, url_prefix=_merge_prefix(base_prefix, chat_bp.url_prefix or ''))
 
-    # 注册新的数据集蓝图
-    from app.routes.dataset_routes import bp as datasets_bp
-    app.register_blueprint(datasets_bp, url_prefix=_merge_prefix(base_prefix, datasets_bp.url_prefix or ''))
+    # 注册新的数据集蓝图（可选：需要modelscope）
+    try:
+        from app.routes.dataset_routes import bp as datasets_bp
+        app.register_blueprint(datasets_bp, url_prefix=_merge_prefix(base_prefix, datasets_bp.url_prefix or ''))
+    except ImportError as e:
+        app.logger.warning(f"数据集路由未注册（精简版模式，缺少modelscope）: {e}")
 
-    from app.routes.evaluation_routes import bp as evaluations_bp
-    app.register_blueprint(evaluations_bp, url_prefix=_merge_prefix(base_prefix, evaluations_bp.url_prefix or ''))
+    # 注册评估相关路由（可选：需要evalscope）
+    try:
+        from app.routes.evaluation_routes import bp as evaluations_bp
+        app.register_blueprint(evaluations_bp, url_prefix=_merge_prefix(base_prefix, evaluations_bp.url_prefix or ''))
+    except ImportError as e:
+        app.logger.warning(f"模型评估路由未注册（精简版模式，缺少evalscope）: {e}")
 
-    # 注册性能评估蓝图
-    from app.routes.perf_eval_routes import perf_eval_bp
-    app.register_blueprint(perf_eval_bp, url_prefix=_merge_prefix(base_prefix, perf_eval_bp.url_prefix or ''))
+    # 注册性能评估蓝图（可选：需要evalscope）
+    try:
+        from app.routes.perf_eval_routes import perf_eval_bp
+        app.register_blueprint(perf_eval_bp, url_prefix=_merge_prefix(base_prefix, perf_eval_bp.url_prefix or ''))
+    except ImportError as e:
+        app.logger.warning(f"性能评估路由未注册（精简版模式，缺少evalscope）: {e}")
 
-    # 注册RAG评估蓝图
-    from app.routes.rag_eval_routes import bp as rag_eval_bp
-    app.register_blueprint(rag_eval_bp, url_prefix=_merge_prefix(base_prefix, rag_eval_bp.url_prefix or ''))
+    # 注册RAG评估蓝图（可选：需要evalscope）
+    try:
+        from app.routes.rag_eval_routes import bp as rag_eval_bp
+        app.register_blueprint(rag_eval_bp, url_prefix=_merge_prefix(base_prefix, rag_eval_bp.url_prefix or ''))
+    except ImportError as e:
+        app.logger.warning(f"RAG评估路由未注册（精简版模式，缺少evalscope）: {e}")
 
     # 错误处理器，需要正确缩进到create_app函数内部
     @app.errorhandler(400)
@@ -414,5 +440,102 @@ def create_app(config_name=None):
             db.create_all()
             init_database_data()
             print("数据库初始化完成")
+    
+    @app.cli.command()
+    def check_tables():
+        """检查并修复缺失的数据库表"""
+        from sqlalchemy import inspect
+        from flask_migrate import upgrade as migrate_upgrade
+        
+        with app.app_context():
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
+            
+            # 定义关键表列表
+            critical_tables = ['user', 'model', 'chat_session', 'chat_message', 'dataset', 'category']
+            missing_tables = [t for t in critical_tables if t not in tables]
+            
+            if not missing_tables:
+                print("✅ 所有关键表都已存在")
+                return
+            
+            print(f"⚠️ 检测到缺失的表: {', '.join(missing_tables)}")
+            print("正在尝试修复...")
+            
+            try:
+                # 尝试执行迁移
+                migrate_upgrade()
+                print("✅ 数据库迁移执行完成")
+                
+                # 再次检查
+                inspector = inspect(db.engine)
+                tables = inspector.get_table_names()
+                still_missing = [t for t in critical_tables if t not in tables]
+                
+                if still_missing:
+                    print(f"⚠️ 迁移后仍缺失: {', '.join(still_missing)}")
+                    print("尝试使用 db.create_all() 创建缺失的表...")
+                    db.create_all()
+                    
+                    # 最终检查
+                    inspector = inspect(db.engine)
+                    tables = inspector.get_table_names()
+                    final_missing = [t for t in critical_tables if t not in tables]
+                    
+                    if final_missing:
+                        print(f"❌ 以下表仍无法创建: {', '.join(final_missing)}")
+                        print("   请检查数据库连接和权限")
+                    else:
+                        print("✅ 所有缺失的表已成功创建")
+                else:
+                    print("✅ 所有缺失的表已通过迁移修复")
+            except Exception as e:
+                print(f"❌ 修复失败: {e}")
+                print("   请手动运行 'flask db upgrade' 或检查错误日志")
+
+    # 添加启动信息输出（在应用创建后立即输出）
+    # 注意：这会在应用创建时输出，而不是在服务器启动时
+    # 但对于 flask run 命令，这是最接近启动时的时机
+    if not hasattr(app, '_startup_info_printed'):
+        # 获取端口和主机配置
+        web_port = app.config.get('WEB_PORT', 5000)
+        host = '0.0.0.0'  # Flask默认主机
+        
+        # 获取URL前缀
+        url_prefix = os.environ.get('URL_PREFIX', '').strip()
+        if url_prefix and not url_prefix.startswith('/'):
+            url_prefix = '/' + url_prefix
+        url_prefix = url_prefix.rstrip('/')
+        
+        # 构建完整URL
+        base_url = f"http://localhost:{web_port}"
+        if url_prefix:
+            full_url = f"{base_url}{url_prefix}"
+        else:
+            full_url = base_url
+        
+        # 获取数据库信息（隐藏密码）
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if '@' in db_uri:
+            db_info = db_uri.split('@')[-1]
+        else:
+            db_info = '未配置'
+        
+        # 输出启动信息（使用print确保在控制台显示）
+        print("\n" + "=" * 60)
+        print("🚀 Flask应用已创建")
+        print("=" * 60)
+        print(f"📍 访问地址: {full_url}")
+        print(f"🔧 配置模式: {config_name}")
+        print(f"🐛 调试模式: {'开启' if app.config.get('DEBUG') else '关闭'}")
+        print(f"🗄️ 数据库: {db_info}")
+        if url_prefix:
+            print(f"🔗 URL前缀: {url_prefix}")
+        print("=" * 60)
+        print("💡 提示: 使用 'flask run' 启动服务器")
+        print("=" * 60 + "\n")
+        
+        # 标记已输出，避免重复输出
+        app._startup_info_printed = True
 
     return app

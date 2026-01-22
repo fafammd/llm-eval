@@ -12,11 +12,20 @@ import threading
 from app.services.model_service import get_decrypted_api_key
 from app.utils import get_beijing_time
 from collections import OrderedDict, defaultdict
-from evalscope.run import run_task
-from evalscope.constants import JudgeStrategy
 import os
 import json
-import pandas as pd
+
+# 可选导入：仅在完整版（包含evalscope）中可用
+try:
+    from evalscope.run import run_task
+    from evalscope.constants import JudgeStrategy
+    import pandas as pd
+    EVALSCOPE_AVAILABLE = True
+except ImportError:
+    EVALSCOPE_AVAILABLE = False
+    run_task = None
+    JudgeStrategy = None
+    pd = None
 
 # 导入配置函数
 from app.config import get_outputs_dir
@@ -105,7 +114,11 @@ class EvaluationService:
             return None
     
     @staticmethod
-    def _run_evaluation_task(app, evaluation_id: int) -> None: 
+    def _run_evaluation_task(app, evaluation_id: int) -> None:
+        """运行评估任务（仅在完整版中可用）"""
+        if not EVALSCOPE_AVAILABLE:
+            current_app.logger.error("评估功能需要evalscope，请安装完整版依赖")
+            return 
         with app.app_context(): 
             current_app.logger.info(f"[评估任务 {evaluation_id}] 开始执行。")
             evaluation = ModelEvaluation.query.get(evaluation_id)
@@ -259,7 +272,7 @@ class EvaluationService:
                     },
                     'eval_batch_size': evaluation.eval_batch_size or 4  # 使用评估并发数
                 }
-                if judge_model_identifier:
+                if judge_model_identifier and EVALSCOPE_AVAILABLE:
                     task_cfg_args['judge_strategy'] = JudgeStrategy.AUTO
                     task_cfg_args['judge_worker_num'] = evaluation.judge_worker_num
                     task_cfg_args['judge_model_args'] = {
@@ -321,6 +334,12 @@ class EvaluationService:
             eval_successful = False
 
             try:
+                if not EVALSCOPE_AVAILABLE:
+                    current_app.logger.error(f"[评估任务 {evaluation_id}] evalscope不可用，无法执行评估")
+                    evaluation.status = 'failed'
+                    evaluation.result_summary = {"error": "evalscope不可用，请安装完整版依赖"}
+                    db.session.commit()
+                    return
                 raw_report_from_evalscope = run_task(task_cfg=task_cfg)
                 current_app.logger.info(f"[评估任务 {evaluation_id}] Evalscope run_task completed.")
                 eval_successful = True
@@ -390,6 +409,9 @@ class EvaluationService:
                                     continue
 
                                 try:
+                                    if not EVALSCOPE_AVAILABLE or pd is None:
+                                        current_app.logger.error("pandas不可用，无法读取review文件")
+                                        continue
                                     origin_df = pd.read_json(review_file_path, lines=True)
                                     for _, item in origin_df.iterrows():
                                         raw_input = item.get('raw_input', '')
@@ -618,6 +640,9 @@ class EvaluationService:
             current_app.logger.info(f"开始导出评估结果，总数: {total_count}")
             
             # 创建Excel文件
+            if not EVALSCOPE_AVAILABLE or pd is None:
+                current_app.logger.error("pandas不可用，无法生成Excel文件")
+                return None
             from io import BytesIO
             output = BytesIO()
             
@@ -655,6 +680,9 @@ class EvaluationService:
                     del batch_results
                 
                 # 创建DataFrame
+                if not EVALSCOPE_AVAILABLE or pd is None:
+                    current_app.logger.error("pandas不可用，无法生成DataFrame")
+                    return None
                 df = pd.DataFrame(all_data)
                 current_app.logger.info(f"创建DataFrame完成，共 {len(df)} 行")
                 

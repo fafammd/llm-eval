@@ -1,0 +1,65 @@
+# 精简版 Dockerfile - 仅包含模型管理和对话功能
+# 使用Python 3.12作为基础镜像
+FROM python:3.12-slim as base
+
+# 设置环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FLASK_APP=run.py \
+    FLASK_ENV=production \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 依赖安装阶段
+FROM base as deps-stage
+
+# 复制精简版requirements并安装Python依赖（单独一层，利用缓存）
+COPY requirements-minimal.txt requirements.txt
+RUN pip install -r requirements.txt
+
+# 最终阶段
+FROM deps-stage as final
+
+RUN groupadd -f -g 2000 paasopt
+RUN useradd -g paasopt -m paasopt -u 2000
+RUN mkdir /usr/local/nldata
+RUN mkdir /nl
+
+#设置字符集
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+
+# 添加时区环境变量，亚洲，上海
+ENV TimeZone=Asia/Shanghai
+# 使用软连接，并且将时区配置覆盖/etc/timezone
+RUN ln -snf /usr/share/zoneinfo/$TimeZone /etc/localtime && echo $TimeZone > /etc/timezone
+
+# 设置工作目录
+WORKDIR /usr/local/nldata
+
+# 复制应用代码
+COPY . .
+
+# 移动docker目录下的脚本到正确位置
+RUN cp /usr/local/nldata/docker/init_database.py /usr/local/nldata/init_database.py && \
+    cp /usr/local/nldata/docker/start.py /usr/local/nldata/start.py
+
+# 创建必要的目录
+RUN mkdir -p /usr/local/nldata/data/uploads /usr/local/nldata/data/outputs /usr/local/nldata/data/instance /usr/local/nldata/data/logs
+
+# 设置权限
+RUN chown -R paasopt:paasopt /usr/local/nldata && \
+    chown -R paasopt:paasopt /nl && \
+    chmod +x /usr/local/nldata/run.py && \
+    chmod +x /usr/local/nldata/init_database.py && \
+    chmod +x /usr/local/nldata/start.py
+
+# 暴露端口
+EXPOSE 5000
+
+# 切换到 paasopt 用户
+USER 2000
+
+# 使用Python脚本启动
+CMD ["python", "/usr/local/nldata/start.py"]

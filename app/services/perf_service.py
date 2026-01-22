@@ -11,16 +11,24 @@ import signal
 import time
 import re
 from typing import Tuple, Dict, List, Any, Optional
-from evalscope.perf.utils.db_util import PercentileMetrics
-from evalscope.perf.utils.benchmark_util import Metrics
 import logging
 import platform
 import threading
-# evalscope导入
-from evalscope.perf.main import run_perf_benchmark
 
-# 导入自定义数据集插件，确保装饰器能够正确注册
-from app.adapter.custom_dataset_plugin import CustomDatasetPlugin
+# 可选导入：仅在完整版（包含evalscope）中可用
+try:
+    from evalscope.perf.utils.db_util import PercentileMetrics
+    from evalscope.perf.utils.benchmark_util import Metrics
+    from evalscope.perf.main import run_perf_benchmark
+    # 导入自定义数据集插件，确保装饰器能够正确注册
+    from app.adapter.custom_dataset_plugin import CustomDatasetPlugin
+    EVALSCOPE_AVAILABLE = True
+except ImportError:
+    EVALSCOPE_AVAILABLE = False
+    PercentileMetrics = None
+    Metrics = None
+    run_perf_benchmark = None
+    CustomDatasetPlugin = None
 
 
 class PerformanceEvaluationService:
@@ -74,6 +82,8 @@ class PerformanceEvaluationService:
             header_found = False
             for i, line in enumerate(lines):
                 stripped_line = line.strip()
+                if not EVALSCOPE_AVAILABLE or PercentileMetrics is None:
+                    break
                 if not header_found and PercentileMetrics.PERCENTILES in stripped_line and PercentileMetrics.TTFT in stripped_line: # 找到表头行
                     header_line = stripped_line
                     header_found = True
@@ -136,6 +146,11 @@ class PerformanceEvaluationService:
     
             def target():
                 try:
+                    if not EVALSCOPE_AVAILABLE or run_perf_benchmark is None:
+                        error_msg = "evalscope不可用，无法执行性能评估"
+                        process_logger.error(error_msg)
+                        result_queue.append(("ERROR", error_msg))
+                        return
                     start_time = time.time()
                     result_tuple = run_perf_benchmark(task_cfg)
                     result_queue.append(result_tuple)
@@ -177,6 +192,8 @@ class PerformanceEvaluationService:
                 signal.signal(signal.SIGALRM, timeout_handler)
                 signal.alarm(15 * 60)
     
+                if not EVALSCOPE_AVAILABLE or run_perf_benchmark is None:
+                    raise ImportError("evalscope不可用，无法执行性能评估")
                 start_time = time.time()
                 result_tuple = run_perf_benchmark(task_cfg)
                 signal.alarm(0)
@@ -281,7 +298,7 @@ class PerformanceEvaluationService:
                                         raw_output += "\n".join([f"{k}: {v}" for k, v in summary.items()]) + "\n\n"
                                         raw_output += "Percentile results:\n"
                                         # 格式化百分位结果
-                                        if percentiles and isinstance(percentiles, dict) and PercentileMetrics.PERCENTILES in percentiles:
+                                        if EVALSCOPE_AVAILABLE and PercentileMetrics and percentiles and isinstance(percentiles, dict) and PercentileMetrics.PERCENTILES in percentiles:
                                             headers = list(percentiles.keys())
                                             for i in range(len(percentiles[PercentileMetrics.PERCENTILES])):
                                                 row = []
@@ -355,6 +372,8 @@ class PerformanceEvaluationService:
     def _convert_summary_to_text(summary: Dict[str, Any]) -> str:
         """将汇总数据转换为文本格式"""
         # 定义汇总指标的显示顺序
+        if not EVALSCOPE_AVAILABLE or Metrics is None:
+            return {}  # 精简版模式下返回空字典
         summary_order = [
             Metrics.TIME_TAKEN_FOR_TESTS,
             Metrics.NUMBER_OF_CONCURRENCY,

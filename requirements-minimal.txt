@@ -1,0 +1,54 @@
+# 精简版依赖 - 仅包含模型管理和对话功能
+# 适用于只需要基础功能的场景，可大幅减少镜像大小
+
+# Flask 核心框架
+Flask
+Flask-SQLAlchemy
+Flask-Migrate
+Flask-Login
+Flask-WTF
+WTForms
+
+# 数据库驱动（根据实际使用的数据库选择）
+PyMySQL
+psycopg2-binary
+
+# HTTP 请求和配置
+requests
+python-dotenv
+
+# AI 模型调用
+openai
+tiktoken
+
+# Web 服务器（生产环境）
+gunicorn
+
+# Flask 核心依赖（通常会自动安装，但明确列出以确保）
+Werkzeug
+Jinja2
+MarkupSafe
+itsdangerous
+click
+blinker
+
+# 可选：如果需要 JSON 处理增强
+simplejson
+
+# ============================================
+# 已移除的依赖（仅用于评估功能，可大幅减少镜像大小）：
+# ============================================
+# - modelscope==1.25.0 (数据集下载，约 200MB+)
+# - evalscope==0.16.3 (模型评估，约 100MB+)
+# - evalscope[perf]==0.16.3 (性能评估)
+# - evalscope[rag]==0.16.3 (RAG评估)
+# - pandas (数据处理，约 50MB+)
+# - numpy (数值计算，约 20MB+)
+# - openpyxl (Excel处理)
+# - omegaconf==2.3.0 (配置管理)
+# - antlr4-python3-runtime==4.9.3 (语法解析)
+# - latex2sympy2_extended==1.10.1 (数学公式)
+# - langid (语言识别)
+# - Pillow (图像处理，如果不需要可以移除)
+#
+# 预计可减少镜像大小：约 400-500MB

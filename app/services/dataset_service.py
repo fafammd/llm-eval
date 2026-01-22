@@ -6,8 +6,13 @@ from typing import List, Dict, Tuple, Any, Optional
 from urllib.parse import quote_plus
 import logging
 
-# 导入ModelScope的SDK
-from modelscope import MsDataset
+# 可选导入：仅在完整版（包含modelscope）中可用
+try:
+    from modelscope import MsDataset
+    MODELSCOPE_AVAILABLE = True
+except ImportError:
+    MODELSCOPE_AVAILABLE = False
+    MsDataset = None
 
 class DatasetService:
     """
@@ -230,6 +235,8 @@ class DatasetService:
             os.makedirs(cache_dir, exist_ok=True)
             
             # 加载数据集
+            if not MODELSCOPE_AVAILABLE or MsDataset is None:
+                raise ImportError("ModelScope不可用，无法下载数据集。请安装完整版依赖（modelscope）。")
             dataset = MsDataset.load(
                 dataset_name, 
                 subset_name=subset,

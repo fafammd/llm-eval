@@ -1,19 +1,50 @@
-from evalscope.benchmarks.benchmark import BENCHMARK_MAPPINGS, BenchmarkMeta  
-from evalscope.benchmarks.data_adapter import DataAdapter  
-from evalscope.constants import OutputType  
-from evalscope.metrics import LLMJudge, Metric, mean, metric_registry
+# 可选导入：仅在完整版（包含evalscope）中可用
+try:
+    from evalscope.benchmarks.benchmark import BENCHMARK_MAPPINGS, BenchmarkMeta  
+    from evalscope.benchmarks.data_adapter import DataAdapter  
+    from evalscope.constants import OutputType  
+    from evalscope.metrics import LLMJudge, Metric, mean, metric_registry
+    from evalscope.utils.io_utils import jsonl_to_list
+    EVALSCOPE_AVAILABLE = True
+except ImportError:
+    EVALSCOPE_AVAILABLE = False
+    # 定义占位符类，避免导入错误
+    BENCHMARK_MAPPINGS = {}
+    class BenchmarkMeta:
+        pass
+    class DataAdapter:
+        pass
+    class OutputType:
+        GENERATION = 'generation'
+    class LLMJudge:
+        pass
+    class Metric:
+        pass
+    def mean(*args, **kwargs):
+        return 0
+    class metric_registry:
+        @staticmethod
+        def list_metrics():
+            return []
+        @staticmethod
+        def register(*args, **kwargs):
+            pass
+    def jsonl_to_list(*args, **kwargs):
+        return []
+
 import json
 from typing import Any, List, Union
 import os.path
 from collections import defaultdict
-from evalscope.utils.io_utils import jsonl_to_list
 from jinja2 import Environment, FileSystemLoader
 import os
 import re
 from app.models import Dataset
   
 # 动态创建DataAdapter类  
-class CustomDatasetAdapter(DataAdapter): 
+# 注意：在精简版模式下（无evalscope），此类不可用
+if EVALSCOPE_AVAILABLE:
+    class CustomDatasetAdapter(DataAdapter): 
     def __init__(self, **kwargs):
         # 初始化模板环境
         template_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'templates')
@@ -183,13 +214,21 @@ class CustomDatasetAdapter(DataAdapter):
             self.template = self.env.get_template(template_name)
         except Exception as e:
             raise ValueError(f"加载模板 {template_name} 失败：{str(e)}")
+else:
+    # 精简版模式：定义占位符类
+    class CustomDatasetAdapter:
+        def __init__(self, **kwargs):
+            raise ImportError("CustomDatasetAdapter requires evalscope. Please install the full version of dependencies.")
 
 def register_custom_dataset_benchmark(dataset_id: int):
-    """动态注册自定义数据集基准测试
+    """动态注册自定义数据集基准测试（仅在完整版中可用）
     
     Args:
-        dataset_name: 数据集名称，用于生成唯一的基准测试名称
+        dataset_id: 数据集ID，用于生成唯一的基准测试名称
     """
+    if not EVALSCOPE_AVAILABLE:
+        raise ImportError("register_custom_dataset_benchmark requires evalscope. Please install the full version of dependencies.")
+    
     benchmark_name = f'custom_dataset_{dataset_id}'
 
     metric_list = ['AverageAccuracy']

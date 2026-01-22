@@ -104,11 +104,41 @@ def check_and_init_database(app):
             from sqlalchemy import text, inspect
 
             print(f"应用数据库迁移... (engine={os.environ.get('DB_ENGINE')}, uri={app.config.get('SQLALCHEMY_DATABASE_URI')})")
+            
+            # PostgreSQL schema 处理：确保在正确的 schema 中检查和创建表
+            db_schema = app.config.get('DB_SCHEMA', '').strip()
+            is_postgresql = os.environ.get('DB_ENGINE', '').lower() == 'postgresql'
+            
+            if is_postgresql and db_schema:
+                # 确保 schema 存在并设置 search_path
+                try:
+                    with db.engine.begin() as conn:
+                        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{db_schema}"'))
+                        conn.execute(text(f'SET search_path TO "{db_schema}", public'))
+                    print(f"✅ PostgreSQL schema '{db_schema}' 已设置")
+                except Exception as schema_e:
+                    print(f"⚠️ 设置 PostgreSQL schema 时出错: {schema_e}")
+            
             # 检查数据库中是否有表以及是否包含rag_evaluation表
             inspector = inspect(db.engine)
-            tables = inspector.get_table_names()
+            # 对于 PostgreSQL，需要指定 schema 来获取表名
+            if is_postgresql and db_schema:
+                # 使用 schema 参数获取指定 schema 中的表
+                try:
+                    tables = inspector.get_table_names(schema=db_schema)
+                except Exception:
+                    # 如果指定 schema 失败，尝试默认方式
+                    tables = inspector.get_table_names()
+            else:
+                tables = inspector.get_table_names()
+            
             has_tables = len(tables) > 0
             has_rag_evaluation = 'rag_evaluation' in tables
+            
+            # 定义关键表列表（必须存在的表）
+            critical_tables = ['user', 'model', 'chat_session', 'chat_message', 'dataset', 'category']
+            missing_tables = [t for t in critical_tables if t not in tables]
+            
             try:
                 if not has_tables:
                     # 新用户，直接升级数据库
@@ -119,13 +149,77 @@ def check_and_init_database(app):
                     print("检测到老用户数据库（没有rag_evaluation表），执行stamp和upgrade...")
                     migrate_stamp(revision='before0730')
                     migrate_upgrade()
+                elif missing_tables:
+                    # 检测到缺少关键表，尝试修复
+                    print(f"⚠️ 检测到缺少关键表: {', '.join(missing_tables)}")
+                    print("尝试执行数据库迁移以修复...")
+                    try:
+                        # 先尝试升级
+                        migrate_upgrade()
+                        # 再次检查
+                        inspector = inspect(db.engine)
+                        tables = inspector.get_table_names()
+                        still_missing = [t for t in critical_tables if t not in tables]
+                        if still_missing:
+                            print(f"⚠️ 迁移后仍缺少表: {', '.join(still_missing)}，尝试使用db.create_all()创建...")
+                            # 对于 PostgreSQL，确保在正确的 schema 中创建表
+                            if is_postgresql and db_schema:
+                                try:
+                                    with db.engine.begin() as conn:
+                                        conn.execute(text(f'SET search_path TO "{db_schema}", public'))
+                                    print(f"   设置 search_path 为 '{db_schema}'")
+                                except Exception as sp_e:
+                                    print(f"   ⚠️ 设置 search_path 失败: {sp_e}")
+                            db.create_all()
+                            print("使用db.create_all()创建表完成")
+                    except Exception as fix_e:
+                        print(f"⚠️ 修复迁移失败: {fix_e}，尝试使用db.create_all()...")
+                        import traceback
+                        traceback.print_exc()
+                        # 对于 PostgreSQL，确保在正确的 schema 中创建表
+                        if is_postgresql and db_schema:
+                            try:
+                                with db.engine.begin() as conn:
+                                    conn.execute(text(f'SET search_path TO "{db_schema}", public'))
+                                print(f"   设置 search_path 为 '{db_schema}'")
+                            except Exception as sp_e:
+                                print(f"   ⚠️ 设置 search_path 失败: {sp_e}")
+                        db.create_all()
+                        print("使用db.create_all()创建表完成")
                     
                 print("数据库迁移完成")
             except Exception as e:
                 print(f"数据库迁移出现问题，尝试使用替代方法: {e}")
+                import traceback
+                traceback.print_exc()
                 # 如果迁移出现问题，尝试使用传统的方式创建表
+                # 对于 PostgreSQL，确保在正确的 schema 中创建表
+                if is_postgresql and db_schema:
+                    try:
+                        with db.engine.begin() as conn:
+                            conn.execute(text(f'SET search_path TO "{db_schema}", public'))
+                        print(f"   设置 search_path 为 '{db_schema}'")
+                    except Exception as sp_e:
+                        print(f"   ⚠️ 设置 search_path 失败: {sp_e}")
                 db.create_all()
                 print("使用db.create_all()创建表完成")
+            
+            # 最终验证：检查关键表是否都存在
+            inspector = inspect(db.engine)
+            # 对于 PostgreSQL，需要指定 schema 来获取表名
+            if is_postgresql and db_schema:
+                try:
+                    tables = inspector.get_table_names(schema=db_schema)
+                except Exception:
+                    tables = inspector.get_table_names()
+            else:
+                tables = inspector.get_table_names()
+            final_missing = [t for t in critical_tables if t not in tables]
+            if final_missing:
+                print(f"❌ 警告：以下关键表仍然缺失: {', '.join(final_missing)}")
+                print("   请手动运行 'flask db upgrade' 或检查数据库连接")
+            else:
+                print("✅ 所有关键表已存在")
             
             # 初始化基础数据
             print("🔄 正在初始化基础数据...")

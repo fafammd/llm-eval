@@ -101,6 +101,18 @@ docker-compose up -d
 
 docker build -f docker/Dockerfile -t your-image .
 
+docker run -d \
+--name llm-talk \
+-p 5000:5000 \
+-e DB_ENGINE=postgresql \
+-e DB_SCHEMA=public \
+-e DB_HOST=172.32.153.238 \
+-e DB_PORT=5432 \
+-e DB_USER=admin1 \
+-e DB_PASSWORD=Postgres123 \
+-e DB_NAME=llm_eva \
+llm-talk:1.0.0
+
 ## 📚 使用指南
 
 ### 添加模型
