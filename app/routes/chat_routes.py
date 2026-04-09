@@ -73,7 +73,7 @@ def view_chat_session(session_id):
                            available_models=available_models,
                            current_model=current_model,
                            saved_configs=saved_configs,
-                           title=f"对话: {session.session_name}")
+                           title=f"对话: {session.session_name} (内容由铁塔AI生成)")
 
 @bp.route('/session/<int:session_id>/send', methods=['POST'])
 @login_required
