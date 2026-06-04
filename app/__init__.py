@@ -9,12 +9,7 @@ import datetime
 import logging  # 添加logging模块导入
 import os  # 添加os模块导入
 # 导入数据集插件，确保@register_dataset装饰器能够正确注册
-# 注意：在精简版模式下（无evalscope），此导入会失败，但不影响核心功能
-try:
-    from app.adapter.custom_dataset_plugin import CustomDatasetPlugin
-except ImportError:
-    # 精简版模式：evalscope未安装，跳过插件注册
-    pass
+from app.adapter.custom_dataset_plugin import CustomDatasetPlugin
 from logging.handlers import RotatingFileHandler
 
 # 修复Flask-Login的redirect导入问题
@@ -365,33 +360,20 @@ def create_app(config_name=None):
     from app.routes.chat_routes import bp as chat_bp
     app.register_blueprint(chat_bp, url_prefix=_merge_prefix(base_prefix, chat_bp.url_prefix or ''))
 
-    # 注册新的数据集蓝图（可选：需要modelscope）
-    try:
-        from app.routes.dataset_routes import bp as datasets_bp
-        app.register_blueprint(datasets_bp, url_prefix=_merge_prefix(base_prefix, datasets_bp.url_prefix or ''))
-    except ImportError as e:
-        app.logger.warning(f"数据集路由未注册（精简版模式，缺少modelscope）: {e}")
+    # 注册新的数据集蓝图
+    from app.routes.dataset_routes import bp as datasets_bp
+    app.register_blueprint(datasets_bp, url_prefix=_merge_prefix(base_prefix, datasets_bp.url_prefix or ''))
 
-    # 注册评估相关路由（可选：需要evalscope）
-    try:
-        from app.routes.evaluation_routes import bp as evaluations_bp
-        app.register_blueprint(evaluations_bp, url_prefix=_merge_prefix(base_prefix, evaluations_bp.url_prefix or ''))
-    except ImportError as e:
-        app.logger.warning(f"模型评估路由未注册（精简版模式，缺少evalscope）: {e}")
+    from app.routes.evaluation_routes import bp as evaluations_bp
+    app.register_blueprint(evaluations_bp, url_prefix=_merge_prefix(base_prefix, evaluations_bp.url_prefix or ''))
 
-    # 注册性能评估蓝图（可选：需要evalscope）
-    try:
-        from app.routes.perf_eval_routes import perf_eval_bp
-        app.register_blueprint(perf_eval_bp, url_prefix=_merge_prefix(base_prefix, perf_eval_bp.url_prefix or ''))
-    except ImportError as e:
-        app.logger.warning(f"性能评估路由未注册（精简版模式，缺少evalscope）: {e}")
+    # 注册性能评估蓝图
+    from app.routes.perf_eval_routes import perf_eval_bp
+    app.register_blueprint(perf_eval_bp, url_prefix=_merge_prefix(base_prefix, perf_eval_bp.url_prefix or ''))
 
-    # 注册RAG评估蓝图（可选：需要evalscope）
-    try:
-        from app.routes.rag_eval_routes import bp as rag_eval_bp
-        app.register_blueprint(rag_eval_bp, url_prefix=_merge_prefix(base_prefix, rag_eval_bp.url_prefix or ''))
-    except ImportError as e:
-        app.logger.warning(f"RAG评估路由未注册（精简版模式，缺少evalscope）: {e}")
+    # 注册RAG评估蓝图
+    from app.routes.rag_eval_routes import bp as rag_eval_bp
+    app.register_blueprint(rag_eval_bp, url_prefix=_merge_prefix(base_prefix, rag_eval_bp.url_prefix or ''))
 
     # 错误处理器，需要正确缩进到create_app函数内部
     @app.errorhandler(400)

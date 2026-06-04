@@ -54,81 +54,81 @@
             </div>
         </div>
 
-{#        <!-- 测试集管理 -->#}
-{#        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">#}
-{#             <figure class="px-10 pt-10">#}
-{#                <i class="fas fa-vials text-5xl text-primary"></i>#}
-{#            </figure>#}
-{#            <div class="card-body items-center text-center">#}
-{#                <h2 class="card-title">测试集管理</h2>#}
-{#                <div class="card-actions">#}
-{#                     <a href="{{ url_for('datasets.datasets_list') }}" class="btn btn-primary btn-sm"><i class="fas fa-cog mr-1"></i> 测试集管理</a>#}
-{#                </div>#}
-{#            </div>#}
-{#        </div>#}
-{##}
-{#        <!-- 模型评测 -->#}
-{#        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">#}
-{#            <figure class="px-10 pt-10">#}
-{#                <i class="fas fa-chart-line text-5xl text-primary"></i>#}
-{#            </figure>#}
-{#            <div class="card-body items-center text-center">#}
-{#                <h2 class="card-title">模型效果评估</h2>#}
-{#                <div class="card-actions">#}
-{#                    <a href="{{ url_for('evaluations.create_evaluation') }}" class="btn btn-primary btn-sm"><i class="fas fa-play mr-1"></i> 效果评估</a>#}
-{#                    <a href="{{ url_for('evaluations.evaluations_list') }}" class="btn btn-primary btn-sm"><i class="fas fa-eye mr-1"></i>#}
-{#                        查看历史</a>#}
-{#                </div>#}
-{#            </div>#}
-{#        </div>#}
-{##}
-{#        <!-- 性能评估卡片 -->#}
-{#        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">#}
-{#            <figure class="px-10 pt-10">#}
-{#                <i class="fas fa-rocket text-5xl text-primary"></i>#}
-{#            </figure>#}
-{#            <div class="card-body items-center text-center">#}
-{#                <h2 class="card-title">性能评估</h2>#}
-{#                <div class="card-actions">#}
-{#                    <a href="{{ url_for('perf_eval.create') }}" class="btn btn-primary btn-sm" ><i class="fas fa-play mr-1"></i> 性能评估</a>#}
-{#                    <a href="{{ url_for('perf_eval.history') }}" class="btn btn-primary btn-sm"><i class="fas fa-eye mr-1"></i> 查看历史</a>#}
-{#                </div>#}
-{#            </div>#}
-{#        </div>#}
-{##}
-{#        <!-- RAG评估卡片 -->#}
-{#        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">#}
-{#            <figure class="px-10 pt-10">#}
-{#                <i class="fas fa-search text-5xl text-primary"></i>#}
-{#            </figure>#}
-{#            <div class="card-body items-center text-center">#}
-{#                <h2 class="card-title">RAG评估</h2>#}
-{#                <div class="card-actions">#}
-{#                    <a href="{{ url_for('rag_eval.create') }}" class="btn btn-primary btn-sm"><i class="fas fa-play mr-1"></i> RAG评估</a>#}
-{#                    <a href="{{ url_for('rag_eval.history') }}" class="btn btn-primary btn-sm"><i class="fas fa-eye mr-1"></i> 查看历史</a>#}
-{#                </div>#}
-{#            </div>#}
-{#        </div>#}
-{##}
-{#        <!-- 即将到来功能卡片 -->#}
-{#        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow border-2 border-dashed border-base-300">#}
-{#            <figure class="px-10 pt-10">#}
-{#                <i class="fas fa-clock text-5xl text-primary"></i>#}
-{#            </figure>#}
-{#            <div class="card-body items-center text-primary">#}
-{#                <h2 class="card-title flex items-center gap-2">#}
-{#                    即将到来#}
-{#                </h2>#}
-{#                #}
-{#                <!-- 功能预告 -->#}
-{#                <div class="space-y-2 mb-4">#}
-{#                    <div class="flex items-center gap-2 text-sm">#}
-{#                        <i class="fas fa-shield-alt text-error"></i>#}
-{#                        <span class="font-semibold">安全评估</span>#}
-{#                        <div class="badge badge-error badge-xs">开发中</div>#}
-{#                    </div>#}
-{#                </div>#}
-{#            </div>#}
+        <!-- 测试集管理 -->
+        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">
+             <figure class="px-10 pt-10">
+                <i class="fas fa-vials text-5xl text-primary"></i>
+            </figure>
+            <div class="card-body items-center text-center">
+                <h2 class="card-title">测试集管理</h2>
+                <div class="card-actions">
+                     <a href="{{ url_for('datasets.datasets_list') }}" class="btn btn-primary btn-sm"><i class="fas fa-cog mr-1"></i> 测试集管理</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- 模型评测 -->
+        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">
+            <figure class="px-10 pt-10">
+                <i class="fas fa-chart-line text-5xl text-primary"></i>
+            </figure>
+            <div class="card-body items-center text-center">
+                <h2 class="card-title">模型效果评估</h2>
+                <div class="card-actions">
+                    <a href="{{ url_for('evaluations.create_evaluation') }}" class="btn btn-primary btn-sm"><i class="fas fa-play mr-1"></i> 效果评估</a>
+                    <a href="{{ url_for('evaluations.evaluations_list') }}" class="btn btn-primary btn-sm"><i class="fas fa-eye mr-1"></i>
+                        查看历史</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- 性能评估卡片 -->
+        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">
+            <figure class="px-10 pt-10">
+                <i class="fas fa-rocket text-5xl text-primary"></i>
+            </figure>
+            <div class="card-body items-center text-center">
+                <h2 class="card-title">性能评估</h2>
+                <div class="card-actions">
+                    <a href="{{ url_for('perf_eval.create') }}" class="btn btn-primary btn-sm" ><i class="fas fa-play mr-1"></i> 性能评估</a>
+                    <a href="{{ url_for('perf_eval.history') }}" class="btn btn-primary btn-sm"><i class="fas fa-eye mr-1"></i> 查看历史</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- RAG评估卡片 -->
+        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">
+            <figure class="px-10 pt-10">
+                <i class="fas fa-search text-5xl text-primary"></i>
+            </figure>
+            <div class="card-body items-center text-center">
+                <h2 class="card-title">RAG评估</h2>
+                <div class="card-actions">
+                    <a href="{{ url_for('rag_eval.create') }}" class="btn btn-primary btn-sm"><i class="fas fa-play mr-1"></i> RAG评估</a>
+                    <a href="{{ url_for('rag_eval.history') }}" class="btn btn-primary btn-sm"><i class="fas fa-eye mr-1"></i> 查看历史</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- 即将到来功能卡片 -->
+        <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow border-2 border-dashed border-base-300">
+            <figure class="px-10 pt-10">
+                <i class="fas fa-clock text-5xl text-primary"></i>
+            </figure>
+            <div class="card-body items-center text-primary">
+                <h2 class="card-title flex items-center gap-2">
+                    即将到来
+                </h2>
+
+                <!-- 功能预告 -->
+                <div class="space-y-2 mb-4">
+                    <div class="flex items-center gap-2 text-sm">
+                        <i class="fas fa-shield-alt text-error"></i>
+                        <span class="font-semibold">安全评估</span>
+                        <div class="badge badge-error badge-xs">开发中</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
     </div>

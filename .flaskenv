@@ -3,12 +3,9 @@
 
 # 可选：mysql 或 postgresql
 DB_ENGINE=postgresql
-DB_NAME=admin1
+DB_NAME=llm_eva
 # PostgreSQL schema（可选，留空则为 public）
-DB_SCHEMA=llm_eva
-DB_HOST=172.32.155.59
-# MySQL 默认 3306，PostgreSQL 默认 5432
-DB_PORT=31001
+DB_SCHEMA=public
 
 # MySQL 相关
 # MYSQL_USER=root
@@ -19,7 +16,12 @@ DB_PORT=31001
 # PostgreSQL 相关（使用时请同步将 DB_ENGINE 设为 postgresql）
 POSTGRES_USER=admin1
 POSTGRES_PASSWORD=Postgres123
+POSTGRES_DB=llm_eva
 
+
+DB_HOST=172.32.153.238
+# MySQL 默认 3306，PostgreSQL 默认 5432
+DB_PORT=5432
 
 FLASK_APP=run.py
 FLASK_ENV=development
