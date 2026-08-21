@@ -13,92 +13,112 @@
         <div class="card shrink-0 w-full max-w-sm shadow-2xl bg-base-200">
             <form method="POST" action="{{ url_for('auth.login') }}" novalidate class="card-body" id="loginForm">
                 {{ form.hidden_tag() }}
-                
+
                 {{ forms.render_field(form.username, placeholder='请输入用户名', required=True) }}
-                
+
                 {{ forms.render_field(form.password, type='password', placeholder='请输入密码', required=True) }}
-                
-                {{ forms.render_checkbox_field(form.remember_me, label_text='记住我') }}
-                
-                <div class="form-control mt-6">
-                    {{ forms.render_submit_button(form.submit, class='btn-primary', text='登录') }}
+
+                <div class="form-control w-full mb-4">
+                    <label class="label" for="captcha">
+                        <span class="label-text">验证码<span class="text-error">*</span></span>
+                    </label>
+                    <div class="flex items-center gap-2">
+                        {{ form.captcha(class='input input-bordered w-24', placeholder='请输入', maxlength=4, autocomplete='off') }}
+                        <img id="captchaImg"
+                             src="{{ url_for('auth.captcha_image') }}"
+                             alt="验证码"
+                             class="h-10 cursor-pointer rounded border border-base-300"
+                             title="点击刷新验证码"
+                             onclick="refreshCaptcha(); return false;" />
+                    </div>
+                    <label class="label" id="captchaError" style="display:none">
+                        <span class="label-text-alt text-error" id="captchaErrorMsg"></span>
+                    </label>
                 </div>
-                 {# <div class="text-sm mt-4">
-                    <a href="#" class="link link-hover">忘记密码?</a>
-                </div> #}
+
+                {{ forms.render_checkbox_field(form.remember_me, label_text='记住我') }}
+
+                <div class="form-control mt-6">
+                    {{ forms.render_submit_button(form.submit, class='btn-primary', text='登录', id='loginBtn') }}
+                </div>
             </form>
         </div>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const usernameField = document.getElementById('username');
-    const passwordField = document.getElementById('password');
-    const rememberMeField = document.getElementById('remember_me');
-    const loginForm = document.getElementById('loginForm');
-    
-    // 页面加载时检查并填充保存的账号密码
-    loadSavedCredentials();
-    
-    // 监听记住我复选框的变化
-    rememberMeField.addEventListener('change', function() {
-        if (!this.checked) {
-            // 如果取消勾选记住我，清除保存的账号密码
-            clearSavedCredentials();
-        }
-    });
-    
-    // 监听表单提交
-    loginForm.addEventListener('submit', function(e) {
-        // 如果勾选了记住我，保存账号密码；如果没勾选，清除保存的账号密码
-        if (rememberMeField.checked) {
-            saveCredentials();
+document.getElementById('loginForm').addEventListener('submit', function(e) {
+    var form = document.getElementById('loginForm');
+    var captchaInput = document.getElementById('captcha');
+    var captchaVal = captchaInput.value.trim();
+    var errorEl = document.getElementById('captchaError');
+    var errorMsg = document.getElementById('captchaErrorMsg');
+    var btn = document.getElementById('loginBtn');
+
+    // 隐藏上次的错误
+    errorEl.style.display = 'none';
+
+    // 前端基础校验
+    if (!captchaVal) {
+        e.preventDefault();
+        errorMsg.textContent = '请输入验证码。';
+        errorEl.style.display = '';
+        captchaInput.focus();
+        return;
+    }
+    if (captchaVal.length !== 4) {
+        e.preventDefault();
+        errorMsg.textContent = '验证码为4位字符。';
+        errorEl.style.display = '';
+        captchaInput.focus();
+        return;
+    }
+
+    // 拦截表单提交，先 AJAX 校验验证码
+    e.preventDefault();
+    btn.disabled = true;
+    btn.value = '验证中...';
+
+    var csrfToken = document.querySelector('input[name="csrf_token"]').value;
+    var formData = new FormData();
+    formData.append('captcha', captchaVal);
+    formData.append('csrf_token', csrfToken);
+
+    fetch('{{ url_for("auth.check_captcha") }}', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin'
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (data.valid) {
+            // 验证码正确，提交表单
+            // 注意：WTForms 的 submit 按钮 name="submit" 会覆盖 form.submit()
+            // 必须用原型方法绕过
+            HTMLFormElement.prototype.submit.call(form);
         } else {
-            clearSavedCredentials();
+            // 验证码错误，刷新验证码，显示错误
+            errorMsg.textContent = data.message;
+            errorEl.style.display = '';
+            refreshCaptcha();
+            btn.disabled = false;
+            btn.value = '登录';
         }
+    })
+    .catch(function() {
+        // 网络异常，允许正常提交（降级到服务端校验）
+        HTMLFormElement.prototype.submit.call(form);
     });
-    
-    function saveCredentials() {
-        const username = usernameField.value;
-        const password = passwordField.value;
-        
-        if (username && password) {
-            // 使用Base64编码存储（简单混淆，不是真正的加密）
-            localStorage.setItem('rememberedUsername', btoa(username));
-            localStorage.setItem('rememberedPassword', btoa(password));
-            localStorage.setItem('credentialsRemembered', 'true');
-        }
-    }
-    
-    function loadSavedCredentials() {
-        const remembered = localStorage.getItem('credentialsRemembered');
-        
-        if (remembered === 'true') {
-            const savedUsername = localStorage.getItem('rememberedUsername');
-            const savedPassword = localStorage.getItem('rememberedPassword');
-            
-            if (savedUsername && savedPassword) {
-                try {
-                    // 解码并填充字段
-                    usernameField.value = atob(savedUsername);
-                    passwordField.value = atob(savedPassword);
-                    rememberMeField.checked = true;
-                } catch (e) {
-                    // 如果解码失败，清除保存的数据
-                    clearSavedCredentials();
-                }
-            }
-        }
-    }
-    
-    function clearSavedCredentials() {
-        localStorage.removeItem('rememberedUsername');
-        localStorage.removeItem('rememberedPassword');
-        localStorage.removeItem('credentialsRemembered');
-    }
 });
+
+function refreshCaptcha() {
+    var img = document.getElementById('captchaImg');
+    img.src = '{{ url_for("auth.captcha_image") }}?t=' + new Date().getTime();
+    var captchaInput = document.getElementById('captcha');
+    captchaInput.value = '';
+    captchaInput.focus();
+}
 </script>
-{% endblock %} 
+{% endblock %}

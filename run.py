@@ -134,11 +134,20 @@ def check_and_init_database(app):
             
             has_tables = len(tables) > 0
             has_rag_evaluation = 'rag_evaluation' in tables
-            
+
+            # 检查user表是否缺少锁定相关字段（新增字段检测）
+            has_lockout_fields = False
+            if 'user' in tables:
+                try:
+                    user_columns = [col['name'] for col in inspector.get_columns('user', schema=db_schema if is_postgresql else None)]
+                    has_lockout_fields = 'failed_login_attempts' in user_columns
+                except Exception:
+                    has_lockout_fields = False
+
             # 定义关键表列表（必须存在的表）
             critical_tables = ['user', 'model', 'chat_session', 'chat_message', 'dataset', 'category']
             missing_tables = [t for t in critical_tables if t not in tables]
-            
+
             try:
                 if not has_tables:
                     # 新用户，直接升级数据库
@@ -186,7 +195,12 @@ def check_and_init_database(app):
                                 print(f"   ⚠️ 设置 search_path 失败: {sp_e}")
                         db.create_all()
                         print("使用db.create_all()创建表完成")
-                    
+                elif not has_lockout_fields:
+                    # 数据库表完整但缺少user表的锁定字段，需要升级
+                    print("检测到user表缺少锁定相关字段，执行数据库升级...")
+                    migrate_stamp(revision='95c1fe3b7e18')
+                    migrate_upgrade()
+
                 print("数据库迁移完成")
             except Exception as e:
                 print(f"数据库迁移出现问题，尝试使用替代方法: {e}")

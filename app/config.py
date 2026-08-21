@@ -78,6 +78,16 @@ class Config:
     # 文件大小限制配置
     DATASET_MAX_FILE_SIZE = int(os.environ.get('DATASET_MAX_FILE_SIZE', 50 * 1024 * 1024))  # 50MB
 
+    # 账户锁定配置
+    MAX_LOGIN_ATTEMPTS = 3           # 最大允许失败次数
+    BASE_LOCKOUT_MINUTES = 10        # 基础锁定时间（分钟），实际锁定时长 = BASE * 2^(lockout_count - 1)
+
+    # 图片验证码配置
+    CAPTCHA_LENGTH = 4               # 验证码字符数
+    CAPTCHA_WIDTH = 120              # 验证码图片宽度
+    CAPTCHA_HEIGHT = 40              # 验证码图片高度
+    CAPTCHA_EXPIRE_SECONDS = 300     # 验证码有效期（秒）
+
 
 class DevelopmentConfig(Config):
     """开发环境配置"""

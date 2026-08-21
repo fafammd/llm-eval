@@ -2,6 +2,7 @@ from app import db, login_manager
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
+import datetime
 from app.utils import get_beijing_time
 from flask import current_app
 
@@ -11,8 +12,8 @@ def load_user(user_id):
         if user_id is None:
             return None
         return User.query.get(int(user_id))
-    except (ValueError, TypeError) as e:
-        # 记录错误但不抛出异常，返回None让Flask-Login处理
+    except Exception as e:
+        # 捕获所有异常（包括数据库字段缺失等），返回None让Flask-Login处理
         current_app.logger.error(f"Error loading user {user_id}: {e}")
         return None
 
@@ -23,6 +24,11 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=get_beijing_time)
 
+    # 账户锁定相关
+    failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
+    lockout_count = db.Column(db.Integer, default=0, nullable=False)
+    locked_until = db.Column(db.DateTime, nullable=True)
+
     model = db.relationship('AIModel', back_populates='owner', lazy='dynamic', cascade="all, delete-orphan")
     chat_sessions = db.relationship('ChatSession', back_populates='user', lazy='dynamic', cascade="all, delete-orphan")
     evaluation_effectiveness = db.relationship('ModelEvaluation', back_populates='user', lazy='dynamic', cascade="all, delete-orphan")
@@ -32,6 +38,56 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    @staticmethod
+    def _now():
+        """获取当前北京时间（无时区信息，与数据库存储一致）"""
+        return get_beijing_time().replace(tzinfo=None)
+
+    def is_locked(self):
+        """检查账户是否处于锁定状态"""
+        if self.locked_until is None:
+            return False
+        if self._now() >= self.locked_until:
+            # 锁定已过期，重置失败计数，给用户全新的3次机会
+            self.locked_until = None
+            self.failed_login_attempts = 0
+            db.session.commit()
+            return False
+        return True
+
+    def get_lock_remaining_seconds(self):
+        """获取剩余锁定时间（秒）"""
+        if not self.is_locked():
+            return 0
+        delta = self.locked_until - self._now()
+        return max(0, int(delta.total_seconds()))
+
+    def increment_failed_attempt(self, max_attempts=3, base_lockout_minutes=10):
+        """增加登录失败次数，达到阈值时触发锁定
+
+        锁定时长公式: base_lockout_minutes * 2^(lockout_count - 1)
+        即: 第1次锁定10分钟, 第2次20分钟, 第3次40分钟...
+        """
+        self.failed_login_attempts += 1
+        if self.failed_login_attempts >= max_attempts:
+            self.lockout_count += 1
+            lockout_minutes = base_lockout_minutes * (2 ** (self.lockout_count - 1))
+            self.locked_until = self._now() + datetime.timedelta(minutes=lockout_minutes)
+        db.session.commit()
+
+    def reset_failed_attempts(self):
+        """登录成功后重置失败计数"""
+        self.failed_login_attempts = 0
+        # 注意: 不重置 lockout_count，保留历史记录用于计算递增时长
+        db.session.commit()
+
+    def admin_unlock(self):
+        """管理员手动解锁账户"""
+        self.failed_login_attempts = 0
+        self.lockout_count = 0
+        self.locked_until = None
+        db.session.commit()
 
     def __repr__(self):
         return f'<User {self.username}>'

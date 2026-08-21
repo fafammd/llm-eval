@@ -5,8 +5,17 @@ from wtforms.validators import DataRequired, Length, EqualTo, Optional, URL, Num
 from wtforms.widgets import ListWidget, CheckboxInput
 
 class LoginForm(FlaskForm):
-    username = StringField('用户名', validators=[DataRequired(), Length(min=3, max=64)])
-    password = PasswordField('密码', validators=[DataRequired()])
+    username = StringField('用户名', validators=[
+        DataRequired(message='请输入用户名。'),
+        Length(min=3, max=64, message='用户名长度需在3到64个字符之间。')
+    ])
+    password = PasswordField('密码', validators=[
+        DataRequired(message='请输入密码。')
+    ])
+    captcha = StringField('验证码', validators=[
+        DataRequired(message='请输入验证码。'),
+        Length(min=4, max=4, message='验证码为4位字符。')
+    ])
     remember_me = BooleanField('记住我')
     submit = SubmitField('登录')
 
